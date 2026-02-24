@@ -3,83 +3,82 @@ import { View, FlatList, StyleSheet, TouchableOpacity, Animated as RNAnimated } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '../store';
-import { addActivity } from '../store/slices/activitySlice';
 import {
   useMaterialYouColors,
   useAnimatedMaterialYouColors,
 } from '../lib/hooks/MaterialYouProvider';
+import { useActivitiesByType, useActivityActions } from '../lib/hooks/useActivityManager';
 import { M3Typography, M3Spacing, M3Shape } from '../lib/design/tokens';
 import { Activity, ActivityType } from '../lib/types';
+import { getActivityIcon } from '../lib/utils/activityUtils';
 import StyledText from './components/StyledText';
 import ActivityCard from './components/ActivityCard';
 
+/**
+ * ActivitiesScreen Component
+ * Full-screen view of all activities with filtering capabilities
+ * Uses business logic hooks to separate concerns
+ */
 export default function ActivitiesScreen() {
   const colors = useMaterialYouColors();
   const animatedColors = useAnimatedMaterialYouColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const dispatch = useDispatch();
 
-  const activities = useSelector((state: RootState) => state.activity.activities);
   const [filterType, setFilterType] = useState<ActivityType | 'all'>('all');
+  const { activities: filteredActivities, isLoading } = useActivitiesByType(filterType);
+  const { createActivity } = useActivityActions();
 
   // Sample data for demo - in production, this would be loaded from the backend
   useEffect(() => {
     // Only add sample data if there are no activities yet
-    if (activities.length === 0) {
+    if (filteredActivities.length === 0 && filterType === 'all') {
       const sampleActivities: Omit<Activity, 'id' | 'timestamp' | 'synced'>[] = [
         {
           type: 'inspection',
           title: 'Site A Inspection Complete',
           siteName: 'Solar Farm A',
           siteId: '1',
-          icon: 'check-circle',
+          icon: getActivityIcon('inspection'),
         },
         {
           type: 'maintenance',
           title: 'Maintenance Scheduled - Site B',
           siteName: 'Solar Farm B',
           siteId: '2',
-          icon: 'wrench',
+          icon: getActivityIcon('maintenance'),
         },
         {
           type: 'report',
           title: 'Report Generated - Site C',
           siteName: 'Solar Farm C',
           siteId: '3',
-          icon: 'file-document',
+          icon: getActivityIcon('report'),
         },
         {
           type: 'check-in',
           title: 'Checked in at Site A',
           siteName: 'Solar Farm A',
           siteId: '1',
-          icon: 'map-marker-check',
+          icon: getActivityIcon('check-in'),
         },
         {
           type: 'schedule',
           title: 'Visit Scheduled for Tomorrow',
           siteName: 'Solar Farm D',
           siteId: '4',
-          icon: 'calendar-check',
+          icon: getActivityIcon('schedule'),
         },
       ];
 
       // Add activities with delays to simulate realistic timestamps
       sampleActivities.forEach((activity, index) => {
         setTimeout(() => {
-          dispatch(addActivity(activity));
+          createActivity(activity);
         }, index * 100);
       });
     }
   }, []);
-
-  const filteredActivities =
-    filterType === 'all'
-      ? activities
-      : activities.filter((activity) => activity.type === filterType);
 
   const handleActivityPress = (activity: Activity) => {
     // Navigate to relevant screen based on activity type

@@ -11,19 +11,37 @@ import { useRouter } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import StyledText from '../components/StyledText';
+import ActivityCard from '../components/ActivityCard';
 import {
   useMaterialYouColors,
   useAnimatedMaterialYouColors,
 } from '../../lib/hooks/MaterialYouProvider';
+import { useRecentActivities } from '../../lib/hooks/useActivityManager';
 import { M3Typography, M3Shape, M3Elevation, M3Spacing, M3Motion } from '../../lib/design/tokens';
+import { Activity } from '../../lib/types';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
+/**
+ * Dashboard Screen Component (Presentation)
+ * Displays overview with stats, recent activities, and quick actions
+ * Business logic delegated to custom hooks
+ */
 export default function Dashboard() {
   const colors = useMaterialYouColors();
   const animatedColors = useAnimatedMaterialYouColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  // Get recent activities from Redux store via hook
+  const { activities: recentActivities } = useRecentActivities(3);
+
+  const handleActivityPress = (activity: Activity) => {
+    // Navigate to relevant screen based on activity
+    if (activity.siteId) {
+      router.push(`/site/${activity.siteId}` as any);
+    }
+  };
 
   return (
     <RNAnimated.View style={{ flex: 1, backgroundColor: animatedColors.background }}>
@@ -229,73 +247,33 @@ export default function Dashboard() {
 
           {/* Activity Cards */}
           <View style={styles.activityList}>
-            {[
-              {
-                icon: 'check-circle',
-                title: 'Site A Inspection Complete',
-                time: '2 hours ago',
-                color: colors.tertiary,
-              },
-              {
-                icon: 'wrench',
-                title: 'Maintenance Scheduled - Site B',
-                time: '5 hours ago',
-                color: colors.secondary,
-              },
-              {
-                icon: 'file-document',
-                title: 'Report Generated - Site C',
-                time: 'Yesterday',
-                color: colors.primary,
-              },
-            ].map((item, index) => (
-              <Animated.View
-                key={index}
-                entering={FadeInUp.duration(M3Motion.duration.normal).delay(350 + index * 50)}
-              >
-                <TouchableOpacity
-                  style={[
-                    styles.activityCard,
-                    {
-                      backgroundColor: colors.surfaceContainer,
-                      borderLeftColor: item.color,
-                    },
-                  ]}
-                  activeOpacity={0.7}
+            {recentActivities.length > 0 ? (
+              recentActivities.map((activity, index) => (
+                <Animated.View
+                  key={activity.id}
+                  entering={FadeInUp.duration(M3Motion.duration.normal).delay(350 + index * 50)}
                 >
-                  <View
-                    style={[styles.activityIconContainer, { backgroundColor: `${item.color}20` }]}
-                  >
-                    <MaterialCommunityIcons name={item.icon as any} size={20} color={item.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <StyledText
-                      style={{
-                        ...M3Typography.body.large,
-                        color: colors.onSurface,
-                        fontWeight: '500',
-                      }}
-                    >
-                      {item.title}
-                    </StyledText>
-                    <StyledText
-                      style={{
-                        ...M3Typography.body.small,
-                        color: colors.onSurfaceVariant,
-                        marginTop: 2,
-                      }}
-                    >
-                      {item.time}
-                    </StyledText>
-                  </View>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={20}
-                    color={colors.onSurfaceVariant}
-                  />
-                </TouchableOpacity>
-              </Animated.View>
-            ))}
+                  <ActivityCard activity={activity} onPress={handleActivityPress} />
+                </Animated.View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <MaterialCommunityIcons
+                  name="clipboard-text-outline"
+                  size={48}
+                  color={colors.onSurfaceVariant}
+                />
+                <StyledText
+                  style={{
+                    ...M3Typography.body.medium,
+                    color: colors.onSurfaceVariant,
+                    marginTop: M3Spacing.sm,
+                  }}
+                >
+                  No recent activities
+                </StyledText>
+              </View>
+            )}
           </View>
         </Animated.View>
 
@@ -427,20 +405,10 @@ const styles = StyleSheet.create({
   activityList: {
     gap: M3Spacing.sm,
   },
-  activityCard: {
-    flexDirection: 'row',
+  emptyState: {
     alignItems: 'center',
-    padding: M3Spacing.lg,
-    borderRadius: M3Shape.medium,
-    borderLeftWidth: 4,
-    gap: M3Spacing.md,
-  },
-  activityIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: M3Shape.small,
     justifyContent: 'center',
-    alignItems: 'center',
+    paddingVertical: M3Spacing.xl,
   },
   quickActionsGrid: {
     flexDirection: 'row',
