@@ -1,9 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
 import maintenanceReducer from './slices/maintenanceSlice';
+import activityReducer from './slices/activitySlice';
 
 export const store = configureStore({
   reducer: {
     maintenance: maintenanceReducer,
+    activity: activityReducer,
   },
 });
 

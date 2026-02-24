@@ -1,5 +1,5 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import Animated, { FadeInUp } from 'react-native-reanimated';
@@ -9,7 +9,7 @@ import { SCHEDULE } from '../../lib/data/schedule';
 import { SITES } from '../../lib/data/sites';
 import { ScheduleVisit } from '../../lib/types';
 import { formatDate, isToday, isTomorrow } from '../../lib/utils/dateFormatter';
-import { M3Motion } from '../../lib/design';
+import { M3Motion, M3Spacing } from '../../lib/design';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
@@ -17,6 +17,7 @@ const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpaci
 export default function ScheduleScreen() {
   const router = useRouter();
   const colors = useMaterialYouColors();
+  const insets = useSafeAreaInsets();
   const [syncing, setSyncing] = useState(false);
 
   const handleSyncCalendar = async () => {
@@ -98,8 +99,8 @@ export default function ScheduleScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + M3Spacing.lg }]}>
         <Animated.Text
           entering={FadeInUp.duration(M3Motion.duration.medium)}
           style={[styles.headerTitle, { color: colors.onSurface }]}
@@ -143,10 +144,13 @@ export default function ScheduleScreen() {
         data={SCHEDULE}
         renderItem={renderVisit}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: insets.bottom + M3Spacing.xl },
+        ]}
         showsVerticalScrollIndicator={false}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

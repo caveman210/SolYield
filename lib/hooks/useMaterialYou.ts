@@ -129,21 +129,26 @@ const DEFAULT_DARK_PALETTE: MaterialYouColors = {
  * Falls back to default palette on iOS or older Android versions
  */
 export function useMaterialYou(): MaterialYouColors {
-  const colorScheme = Appearance.getColorScheme();
-  const [colors, setColors] = useState<MaterialYouColors>(
-    colorScheme === 'dark' ? DEFAULT_DARK_PALETTE : DEFAULT_LIGHT_PALETTE
-  );
+  const [colorScheme, setColorScheme] = useState<'light' | 'dark'>(() => {
+    const initial = Appearance.getColorScheme();
+    return initial === 'dark' ? 'dark' : 'light';
+  });
+  const [colors, setColors] = useState<MaterialYouColors>(() => {
+    const initialScheme = Appearance.getColorScheme();
+    return initialScheme === 'dark' ? DEFAULT_DARK_PALETTE : DEFAULT_LIGHT_PALETTE;
+  });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const extractDynamicColors = async () => {
       try {
-        const androidVersion = Platform.OS === 'android' 
-          ? typeof Platform.Version === 'number' 
-            ? Platform.Version 
-            : parseInt(String(Platform.Version || '0'), 10)
-          : 0;
-        
+        const androidVersion =
+          Platform.OS === 'android'
+            ? typeof Platform.Version === 'number'
+              ? Platform.Version
+              : parseInt(String(Platform.Version || '0'), 10)
+            : 0;
+
         // Only available on Android 12+ (API 31+)
         if (Platform.OS !== 'android' || androidVersion < 31) {
           setColors(colorScheme === 'dark' ? DEFAULT_DARK_PALETTE : DEFAULT_LIGHT_PALETTE);
@@ -151,7 +156,7 @@ export function useMaterialYou(): MaterialYouColors {
           return;
         }
 
-        console.log('🎨 Extracting Material You colors...');
+        console.log('🎨 Extracting Material You colors from wallpaper...');
         console.log('Platform:', Platform.OS, 'Version:', androidVersion);
         console.log('Color Scheme:', colorScheme);
 
@@ -163,29 +168,11 @@ export function useMaterialYou(): MaterialYouColors {
           return;
         }
 
-        // Get Material You colors from Android system
-        // Use #006C4C (green energy) as fallback seed color with TONAL_SPOT style
-        const palette = await MaterialYou.getMaterialYouPalette('#006C4C', 'TONAL_SPOT');
-        console.log('✅ Material You palette received:', {
-          hasAccent1: !!palette?.system_accent1,
-          hasAccent2: !!palette?.system_accent2,
-          hasAccent3: !!palette?.system_accent3,
-          hasNeutral1: !!palette?.system_neutral1,
-          hasNeutral2: !!palette?.system_neutral2,
-        });
-
-        // Debug: Log actual palette values
-        if (palette?.system_accent1) {
-          console.log('📊 Accent1 tones:', {
-            tone0: palette.system_accent1[0],
-            tone40: palette.system_accent1[4],
-            tone80: palette.system_accent1[8],
-          });
-          console.log('📊 Neutral1 tones:', {
-            tone10: palette.system_neutral1?.[1],
-            tone99: palette.system_neutral1?.[11],
-          });
-        }
+        // Get Material You colors from Android system wallpaper
+        // Using 'auto' to extract colors directly from device wallpaper
+        // VIBRANT creates more colorful, energetic palettes
+        const palette = await MaterialYou.getMaterialYouPalette('auto', 'VIBRANT');
+        console.log('✅ Material You palette received from wallpaper');
 
         if (palette && palette.system_accent1) {
           // Map Material You palette to M3 color system
@@ -200,29 +187,33 @@ export function useMaterialYou(): MaterialYouColors {
             return shades?.[index] || fallback;
           };
 
-          // Corrected color mapping
+          // CRITICAL FIX: Material You library returns tones INVERTED!
+          // What the library calls "tone0" is actually tone100, "tone100" is tone0, etc.
+          // We need to REVERSE all index mappings
           const dynamicColors: MaterialYouColors = {
             // Primary colors from system_accent1
+            // Standard M3: Dark uses tone80, Light uses tone40
+            // Inverted: Dark uses index 4 (12-8), Light uses index 8 (12-4)
             primary: getTone(
               palette.system_accent1,
-              isDark ? 8 : 4, // Dark: tone80, Light: tone40
+              isDark ? 4 : 8, // INVERTED: Dark: tone80→idx4, Light: tone40→idx8
               isDark ? DEFAULT_DARK_PALETTE.primary : DEFAULT_LIGHT_PALETTE.primary
             ),
             onPrimary: getTone(
               palette.system_accent1,
-              isDark ? 2 : 12, // Dark: tone20, Light: tone100
+              isDark ? 10 : 0, // INVERTED: Dark: tone20→idx10, Light: tone100→idx0
               isDark ? DEFAULT_DARK_PALETTE.onPrimary : DEFAULT_LIGHT_PALETTE.onPrimary
             ),
             primaryContainer: getTone(
               palette.system_accent1,
-              isDark ? 3 : 9, // Dark: tone30, Light: tone90
+              isDark ? 9 : 3, // INVERTED: Dark: tone30→idx9, Light: tone90→idx3
               isDark
                 ? DEFAULT_DARK_PALETTE.primaryContainer
                 : DEFAULT_LIGHT_PALETTE.primaryContainer
             ),
             onPrimaryContainer: getTone(
               palette.system_accent1,
-              isDark ? 9 : 1, // Dark: tone90, Light: tone10
+              isDark ? 3 : 11, // INVERTED: Dark: tone90→idx3, Light: tone10→idx11
               isDark
                 ? DEFAULT_DARK_PALETTE.onPrimaryContainer
                 : DEFAULT_LIGHT_PALETTE.onPrimaryContainer
@@ -231,24 +222,24 @@ export function useMaterialYou(): MaterialYouColors {
             // Secondary colors from system_accent2
             secondary: getTone(
               palette.system_accent2,
-              isDark ? 8 : 4, // Dark: tone80, Light: tone40
+              isDark ? 4 : 8, // INVERTED
               isDark ? DEFAULT_DARK_PALETTE.secondary : DEFAULT_LIGHT_PALETTE.secondary
             ),
             onSecondary: getTone(
               palette.system_accent2,
-              isDark ? 2 : 12, // Dark: tone20, Light: tone100
+              isDark ? 10 : 0, // INVERTED
               isDark ? DEFAULT_DARK_PALETTE.onSecondary : DEFAULT_LIGHT_PALETTE.onSecondary
             ),
             secondaryContainer: getTone(
               palette.system_accent2,
-              isDark ? 3 : 9, // Dark: tone30, Light: tone90
+              isDark ? 9 : 3, // INVERTED
               isDark
                 ? DEFAULT_DARK_PALETTE.secondaryContainer
                 : DEFAULT_LIGHT_PALETTE.secondaryContainer
             ),
             onSecondaryContainer: getTone(
               palette.system_accent2,
-              isDark ? 9 : 1, // Dark: tone90, Light: tone10
+              isDark ? 3 : 11, // INVERTED
               isDark
                 ? DEFAULT_DARK_PALETTE.onSecondaryContainer
                 : DEFAULT_LIGHT_PALETTE.onSecondaryContainer
@@ -257,24 +248,24 @@ export function useMaterialYou(): MaterialYouColors {
             // Tertiary colors from system_accent3
             tertiary: getTone(
               palette.system_accent3,
-              isDark ? 8 : 4, // Dark: tone80, Light: tone40
+              isDark ? 4 : 8, // INVERTED
               isDark ? DEFAULT_DARK_PALETTE.tertiary : DEFAULT_LIGHT_PALETTE.tertiary
             ),
             onTertiary: getTone(
               palette.system_accent3,
-              isDark ? 2 : 12, // Dark: tone20, Light: tone100
+              isDark ? 10 : 0, // INVERTED
               isDark ? DEFAULT_DARK_PALETTE.onTertiary : DEFAULT_LIGHT_PALETTE.onTertiary
             ),
             tertiaryContainer: getTone(
               palette.system_accent3,
-              isDark ? 3 : 9, // Dark: tone30, Light: tone90
+              isDark ? 9 : 3, // INVERTED
               isDark
                 ? DEFAULT_DARK_PALETTE.tertiaryContainer
                 : DEFAULT_LIGHT_PALETTE.tertiaryContainer
             ),
             onTertiaryContainer: getTone(
               palette.system_accent3,
-              isDark ? 9 : 1, // Dark: tone90, Light: tone10
+              isDark ? 3 : 11, // INVERTED
               isDark
                 ? DEFAULT_DARK_PALETTE.onTertiaryContainer
                 : DEFAULT_LIGHT_PALETTE.onTertiaryContainer
@@ -286,49 +277,50 @@ export function useMaterialYou(): MaterialYouColors {
             errorContainer: isDark ? '#93000A' : '#FFDAD6',
             onErrorContainer: isDark ? '#FFDAD6' : '#410002',
 
-            // INVERSION FIX: Correctly map tones for light/dark modes
-            // Light Mode: Background is tone99 (light), OnBackground is tone10 (dark)
-            // Dark Mode: Background is tone10 (dark), OnBackground is tone90 (light)
+            // CRITICAL FIX: The Material You library returns tones in REVERSE order!
+            // tone10 is actually tone99, tone99 is actually tone10
+            // Light Mode: Background should be tone99 (light) = index 1
+            // Dark Mode: Background should be tone10 (dark) = index 11
             background: getTone(
               palette.system_neutral1,
-              isDark ? 1 : 11, // Dark: tone10, Light: tone99
+              isDark ? 11 : 1, // SWAPPED: Dark: tone99, Light: tone10
               isDark ? DEFAULT_DARK_PALETTE.background : DEFAULT_LIGHT_PALETTE.background
             ),
             onBackground: getTone(
               palette.system_neutral1,
-              isDark ? 9 : 1, // Dark: tone90, Light: tone10
+              isDark ? 1 : 11, // SWAPPED: Dark: tone10, Light: tone99
               isDark ? DEFAULT_DARK_PALETTE.onBackground : DEFAULT_LIGHT_PALETTE.onBackground
             ),
             surface: getTone(
               palette.system_neutral1,
-              isDark ? 1 : 11, // Dark: tone10, Light: tone99
+              isDark ? 11 : 1, // SWAPPED: Dark: tone99, Light: tone10
               isDark ? DEFAULT_DARK_PALETTE.surface : DEFAULT_LIGHT_PALETTE.surface
             ),
             onSurface: getTone(
               palette.system_neutral1,
-              isDark ? 9 : 1, // Dark: tone90, Light: tone10
+              isDark ? 1 : 11, // SWAPPED: Dark: tone10, Light: tone99
               isDark ? DEFAULT_DARK_PALETTE.onSurface : DEFAULT_LIGHT_PALETTE.onSurface
             ),
             surfaceVariant: getTone(
               palette.system_neutral2,
-              isDark ? 3 : 9, // Dark: tone30, Light: tone90
+              isDark ? 9 : 3, // INVERTED: Dark: tone30→idx9, Light: tone90→idx3
               isDark ? DEFAULT_DARK_PALETTE.surfaceVariant : DEFAULT_LIGHT_PALETTE.surfaceVariant
             ),
             onSurfaceVariant: getTone(
               palette.system_neutral2,
-              isDark ? 8 : 3, // Dark: tone80, Light: tone30
+              isDark ? 4 : 9, // INVERTED: Dark: tone80→idx4, Light: tone30→idx9
               isDark
                 ? DEFAULT_DARK_PALETTE.onSurfaceVariant
                 : DEFAULT_LIGHT_PALETTE.onSurfaceVariant
             ),
             outline: getTone(
               palette.system_neutral2,
-              isDark ? 6 : 5, // Dark: tone60, Light: tone50
+              isDark ? 6 : 7, // INVERTED: Dark: tone60→idx6, Light: tone50→idx7
               isDark ? DEFAULT_DARK_PALETTE.outline : DEFAULT_LIGHT_PALETTE.outline
             ),
             outlineVariant: getTone(
               palette.system_neutral2,
-              isDark ? 3 : 8, // Dark: tone30, Light: tone80
+              isDark ? 9 : 4, // INVERTED: Dark: tone30→idx9, Light: tone80→idx4
               isDark ? DEFAULT_DARK_PALETTE.outlineVariant : DEFAULT_LIGHT_PALETTE.outlineVariant
             ),
 
@@ -339,75 +331,71 @@ export function useMaterialYou(): MaterialYouColors {
             // Inverse
             inverseSurface: getTone(
               palette.system_neutral1,
-              isDark ? 9 : 2, // Dark: tone90, Light: tone20
+              isDark ? 3 : 10, // INVERTED: Dark: tone90→idx3, Light: tone20→idx10
               isDark ? DEFAULT_DARK_PALETTE.inverseSurface : DEFAULT_LIGHT_PALETTE.inverseSurface
             ),
             inverseOnSurface: getTone(
               palette.system_neutral1,
-              isDark ? 2 : 10, // Dark: tone20, Light: tone95
+              isDark ? 10 : 2, // INVERTED: Dark: tone20→idx10, Light: tone95→idx2
               isDark
                 ? DEFAULT_DARK_PALETTE.inverseOnSurface
                 : DEFAULT_LIGHT_PALETTE.inverseOnSurface
             ),
             inversePrimary: getTone(
               palette.system_accent1,
-              isDark ? 4 : 8, // Dark: tone40, Light: tone80
+              isDark ? 8 : 4, // INVERTED: Dark: tone40→idx8, Light: tone80→idx4
               isDark ? DEFAULT_DARK_PALETTE.inversePrimary : DEFAULT_LIGHT_PALETTE.inversePrimary
             ),
 
-            // Surface containers
+            // Surface containers - These need careful mapping
             surfaceDim: getTone(
               palette.system_neutral1,
-              isDark ? 1 : 9, // Dark: tone6, Light: tone87
+              isDark ? 11 : 3, // INVERTED: Dark: tone6→idx11, Light: tone87→idx3
               isDark ? DEFAULT_DARK_PALETTE.surfaceDim : DEFAULT_LIGHT_PALETTE.surfaceDim
             ),
             surfaceBright: getTone(
               palette.system_neutral1,
-              isDark ? 3 : 11, // Dark: tone24, Light: tone98
+              isDark ? 9 : 1, // INVERTED: Dark: tone24→idx9, Light: tone98→idx1
               isDark ? DEFAULT_DARK_PALETTE.surfaceBright : DEFAULT_LIGHT_PALETTE.surfaceBright
             ),
             surfaceContainerLowest: getTone(
               palette.system_neutral1,
-              isDark ? 0 : 12, // Dark: tone4, Light: tone100
+              isDark ? 12 : 0, // INVERTED: Dark: tone4→idx12, Light: tone100→idx0
               isDark
                 ? DEFAULT_DARK_PALETTE.surfaceContainerLowest
                 : DEFAULT_LIGHT_PALETTE.surfaceContainerLowest
             ),
             surfaceContainerLow: getTone(
               palette.system_neutral1,
-              isDark ? 1 : 10, // Dark: tone10, Light: tone96
+              isDark ? 11 : 2, // INVERTED: Dark: tone10→idx11, Light: tone96→idx2
               isDark
                 ? DEFAULT_DARK_PALETTE.surfaceContainerLow
                 : DEFAULT_LIGHT_PALETTE.surfaceContainerLow
             ),
             surfaceContainer: getTone(
               palette.system_neutral1,
-              isDark ? 2 : 9, // Dark: tone12, Light: tone94
+              isDark ? 10 : 3, // INVERTED: Dark: tone12→idx10, Light: tone94→idx3
               isDark
                 ? DEFAULT_DARK_PALETTE.surfaceContainer
                 : DEFAULT_LIGHT_PALETTE.surfaceContainer
             ),
             surfaceContainerHigh: getTone(
               palette.system_neutral1,
-              isDark ? 3 : 9, // Dark: tone17, Light: tone92
+              isDark ? 9 : 3, // INVERTED: Dark: tone17→idx9, Light: tone92→idx3
               isDark
                 ? DEFAULT_DARK_PALETTE.surfaceContainerHigh
                 : DEFAULT_LIGHT_PALETTE.surfaceContainerHigh
             ),
             surfaceContainerHighest: getTone(
               palette.system_neutral1,
-              isDark ? 4 : 9, // Dark: tone22, Light: tone90
+              isDark ? 8 : 3, // INVERTED: Dark: tone22→idx8, Light: tone90→idx3
               isDark
                 ? DEFAULT_DARK_PALETTE.surfaceContainerHighest
                 : DEFAULT_LIGHT_PALETTE.surfaceContainerHighest
             ),
           };
 
-          console.log('✨ Material You dynamic colors extracted:', {
-            primary: dynamicColors.primary,
-            surface: dynamicColors.surface,
-            background: dynamicColors.background,
-          });
+          console.log('✨ Material You colors applied:', colorScheme, 'mode');
           setColors(dynamicColors);
           setIsLoading(false);
         } else {
@@ -426,8 +414,9 @@ export function useMaterialYou(): MaterialYouColors {
 
     // Listen for color scheme changes
     const subscription = Appearance.addChangeListener(({ colorScheme: newColorScheme }) => {
-      console.log('Color scheme changed to:', newColorScheme);
-      extractDynamicColors();
+      const resolved = newColorScheme === 'dark' ? 'dark' : 'light';
+      console.log('🎨 Color scheme changed to:', resolved);
+      setColorScheme(resolved);
     });
 
     return () => subscription.remove();

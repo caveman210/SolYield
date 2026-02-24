@@ -10,7 +10,7 @@ interface CardProps extends ViewProps {
 
 const Card: React.FC<CardProps> = ({ children, className, style, ...props }) => {
   const colors = useMaterialYouColors();
-  
+
   return (
     <StyledView
       className={`p-4 ${className}`}

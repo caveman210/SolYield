@@ -60,3 +60,17 @@ export interface FormSchema {
   title: string;
   sections: FormSection[];
 }
+
+export type ActivityType = 'inspection' | 'check-in' | 'report' | 'schedule' | 'maintenance';
+
+export interface Activity {
+  id: string;
+  type: ActivityType;
+  title: string;
+  description?: string;
+  siteId?: string;
+  siteName?: string;
+  timestamp: number; // Unix timestamp in milliseconds
+  icon: string; // MaterialCommunityIcons name
+  synced: boolean;
+}

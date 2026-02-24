@@ -1,11 +1,11 @@
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { SITES } from '../../lib/data/sites';
 import { Site } from '../../lib/types';
-import { M3Motion } from '../../lib/design';
+import { M3Motion, M3Spacing } from '../../lib/design';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
@@ -13,6 +13,7 @@ const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpaci
 export default function SitesScreen() {
   const router = useRouter();
   const colors = useMaterialYouColors();
+  const insets = useSafeAreaInsets();
 
   const renderSite = ({ item, index }: { item: Site; index: number }) => (
     <AnimatedTouchableOpacity
@@ -47,8 +48,8 @@ export default function SitesScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + M3Spacing.lg }]}>
         <Animated.Text
           entering={FadeInUp.duration(M3Motion.duration.medium)}
           style={[styles.headerTitle, { color: colors.onSurface }]}
@@ -66,10 +67,13 @@ export default function SitesScreen() {
         data={SITES}
         renderItem={renderSite}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: insets.bottom + M3Spacing.xl },
+        ]}
         showsVerticalScrollIndicator={false}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

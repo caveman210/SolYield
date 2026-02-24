@@ -50,6 +50,15 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow SolYield to use your location."
         }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "position": "relative",
+          "visibility": "visible",
+          "behavior": "overlay-swipe",
+          "borderStyle": "dark"
+        }
       ]
     ]
   }

@@ -1,20 +1,22 @@
 import React from 'react';
 import { View, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
 import StyledText from './StyledText';
-import StyledView from './StyledView';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const TabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation }) => {
   const colors = useMaterialYouColors();
+  const insets = useSafeAreaInsets();
 
   return (
-    <StyledView
+    <View
       style={{
         backgroundColor: colors.surface,
         borderTopWidth: 1,
         borderTopColor: colors.outlineVariant,
         flexDirection: 'row',
+        paddingBottom: insets.bottom,
       }}
     >
       {state.routes.map((route, index) => {
@@ -23,8 +25,8 @@ const TabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation })
           options.tabBarLabel !== undefined
             ? options.tabBarLabel
             : options.title !== undefined
-            ? options.title
-            : route.name;
+              ? options.title
+              : route.name;
 
         const isFocused = state.index === index;
 
@@ -65,15 +67,18 @@ const TabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation })
             onLongPress={onLongPress}
             style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8 }}
           >
-            <StyledView
+            <View
               style={{
                 padding: 12,
                 borderRadius: 16,
                 backgroundColor: isFocused ? colors.primaryContainer : 'transparent',
+                overflow: 'hidden',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               {iconElement}
-            </StyledView>
+            </View>
             <StyledText
               style={{
                 color: isFocused ? colors.primary : colors.onSurfaceVariant,
@@ -86,7 +91,7 @@ const TabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation })
           </TouchableOpacity>
         );
       })}
-    </StyledView>
+    </View>
   );
 };
 

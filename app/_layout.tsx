@@ -8,44 +8,40 @@ import { MaterialYouProvider, useMaterialYouColors } from '../lib/hooks/Material
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 function AppContent() {
   const colors = useMaterialYouColors();
 
-  // Set NavigationBar colors on Android
+  // Set NavigationBar button style for edge-to-edge mode (background handled by View components)
   useEffect(() => {
     if (Platform.OS === 'android') {
       const setNavigationBar = async () => {
         try {
           const NavigationBar = await import('expo-navigation-bar');
-          const hex = colors.onSurface.replace('#', '');
+
+          // Calculate luminance of background to determine button style
+          const hex = colors.background.replace('#', '');
           const r = parseInt(hex.substring(0, 2), 16);
           const g = parseInt(hex.substring(2, 4), 16);
           const b = parseInt(hex.substring(4, 6), 16);
           const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-          const isDarkSurface = luminance > 0.5;
-          await NavigationBar.setButtonStyleAsync(isDarkSurface ? 'light' : 'dark');
+          const isLightBackground = luminance > 0.5;
+
+          // Set button style based on background luminance
+          // Light background = dark buttons, Dark background = light buttons
+          await NavigationBar.setButtonStyleAsync(isLightBackground ? 'dark' : 'light');
         } catch (error) {
-          console.log('NavigationBar not available or edge-to-edge enabled:', error);
+          console.log('NavigationBar configuration error:', error);
         }
       };
       setNavigationBar();
     }
-  }, [colors.surface, colors.onSurface]);
+  }, [colors.background]);
 
   return (
     <>
-      <StatusBar
-        style={
-          colors.onSurface.includes('FF') ||
-          colors.onSurface.includes('EE') ||
-          colors.onSurface.includes('DD')
-            ? 'light'
-            : 'dark'
-        }
-        backgroundColor={colors.background}
-        translucent={false}
-      />
+      <StatusBar style="auto" backgroundColor="transparent" translucent={true} />
       <Stack
         screenOptions={{
           headerStyle: {
@@ -99,11 +95,12 @@ export default function RootLayout() {
   }
 
   return (
-    <Provider store={store}>
-      <MaterialYouProvider>
-        <AppContent />
-      </MaterialYouProvider>
-    </Provider>
+    <SafeAreaProvider>
+      <Provider store={store}>
+        <MaterialYouProvider>
+          <AppContent />
+        </MaterialYouProvider>
+      </Provider>
+    </SafeAreaProvider>
   );
 }
-
