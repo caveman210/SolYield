@@ -3,10 +3,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { SITES } from '../../lib/data/sites';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Site } from '../../lib/types';
 import { M3Motion, M3Spacing } from '../../lib/design';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
+import { useSiteManagement } from '../../lib/hooks/useSiteManagement';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -14,6 +15,7 @@ export default function SitesScreen() {
   const router = useRouter();
   const colors = useMaterialYouColors();
   const insets = useSafeAreaInsets();
+  const { allSites } = useSiteManagement();
 
   const renderSite = ({ item, index }: { item: Site; index: number }) => (
     <AnimatedTouchableOpacity
@@ -60,19 +62,40 @@ export default function SitesScreen() {
           entering={FadeInUp.duration(M3Motion.duration.medium).delay(50)}
           style={[styles.headerSubtitle, { color: colors.onSurfaceVariant }]}
         >
-          {SITES.length} active solar parks
+          {allSites.length} active solar parks
         </Animated.Text>
       </View>
       <FlatList
-        data={SITES}
+        data={allSites}
         renderItem={renderSite}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: insets.bottom + M3Spacing.xl },
+          { paddingBottom: insets.bottom + M3Spacing.xl + 80 }, // Extra padding for FAB
         ]}
         showsVerticalScrollIndicator={false}
       />
+      
+      {/* Floating Action Button (FAB) */}
+      <Animated.View
+        entering={FadeInUp.duration(M3Motion.duration.medium).delay(200)}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: colors.primaryContainer,
+            shadowColor: colors.shadow,
+            bottom: insets.bottom + 80, // Position above tab bar
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.fabTouchable}
+          onPress={() => router.push('/add-site')}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="plus" size={28} color={colors.onPrimaryContainer} />
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
@@ -144,5 +167,22 @@ const styles = StyleSheet.create({
   },
   locationText: {
     fontSize: 14,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  fabTouchable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

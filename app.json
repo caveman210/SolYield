@@ -7,7 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "scheme": "solyield",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -32,6 +36,7 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
+        "ACCESS_NETWORK_STATE",
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
@@ -52,6 +57,13 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "SolYield needs photo library access to save inspection photos.",
+          "cameraPermission": "SolYield needs camera access to capture inspection photos."
+        }
+      ],
+      [
         "expo-navigation-bar",
         {
           "position": "relative",
@@ -59,7 +71,8 @@
           "behavior": "overlay-swipe",
           "borderStyle": "dark"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

@@ -11,60 +11,88 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
-import { useDispatch } from 'react-redux';
-import * as ImagePicker from 'expo-image-picker';
+import { useState, useCallback } from 'react';
+import { router } from 'expo-router';
 import Animated, { FadeInUp, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { FORM_SCHEMA } from '../../lib/data/formSchema';
-import { submitForm, saveDraft } from '../../store/slices/maintenanceSlice';
 import { FormField as FormFieldType } from '../../lib/types';
 import { M3Motion } from '../../lib/design';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
+import { useInspections, useInspectionValidation, useImageCapture } from '../../lib/hooks/useInspections';
+import { useOfflineSync } from '../../lib/hooks/useOfflineSync';
+import { useSites } from '../../lib/hooks/useSites';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 const AnimatedView = Animated.createAnimatedComponent(View);
 
 export default function InspectionScreen() {
-  const dispatch = useDispatch();
   const colors = useMaterialYouColors();
+  const { submitInspection } = useInspections();
+  const { validateFormData, errors, setErrors } = useInspectionValidation();
+  const { captureImage, pickImageFromGallery } = useImageCapture();
+  const { isOnline } = useOfflineSync();
+  const { sites, getSiteName } = useSites();
+  
   const [formValues, setFormValues] = useState<Record<string, any>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const handleFieldChange = (fieldId: string, value: any) => {
+  const handleFieldChange = useCallback((fieldId: string, value: any) => {
     setFormValues((prev) => ({ ...prev, [fieldId]: value }));
     setErrors((prev) => ({ ...prev, [fieldId]: '' }));
-    dispatch(saveDraft({ ...formValues, [fieldId]: value }));
-  };
+  }, [setErrors]);
 
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
-    FORM_SCHEMA.sections.forEach((section) => {
-      section.fields.forEach((field) => {
-        if (field.required && !formValues[field.id]) {
-          newErrors[field.id] = `${field.label} is required`;
-        }
-      });
-    });
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  const handleCaptureImage = useCallback(async (fieldId: string) => {
+    const imageUri = await captureImage();
+    if (imageUri) {
+      handleFieldChange(fieldId, imageUri);
+    }
+  }, [captureImage, handleFieldChange]);
 
-  const handleSubmit = () => {
-    if (!validateForm()) {
+  const handleSubmit = useCallback(async () => {
+    // Validate form
+    const isValid = validateFormData(formValues, FORM_SCHEMA);
+    if (!isValid) {
       Alert.alert('Validation Error', 'Please fill in all required fields');
       return;
     }
 
+    // Get site ID from form (assuming there's a siteId field)
+    const siteId = formValues.siteId || sites[0]?.id || 'site_01';
+    const siteName = getSiteName(siteId);
+
     setSubmitting(true);
-    setTimeout(() => {
-      dispatch(submitForm(formValues));
+    try {
+      // Submit inspection with all data
+      await submitInspection({
+        siteId,
+        siteName,
+        data: formValues,
+      });
+
+      // Clear form and show success
       setFormValues({});
       setSubmitting(false);
-      Alert.alert('Success', 'Form saved locally. Will sync when online.');
-    }, 1000);
-  };
+      
+      Alert.alert(
+        'Success', 
+        `Inspection submitted successfully!${!isOnline ? ' Will sync when online.' : ''}`,
+        [
+          {
+            text: 'View History',
+            onPress: () => router.push('/history'),
+          },
+          {
+            text: 'OK',
+            style: 'default',
+          },
+        ]
+      );
+    } catch (error) {
+      setSubmitting(false);
+      Alert.alert('Error', 'Failed to submit inspection. Please try again.');
+    }
+  }, [formValues, validateFormData, submitInspection, sites, getSiteName, isOnline]);
 
   const renderField = (field: FormFieldType, sectionIndex: number, fieldIndex: number) => {
     const value = formValues[field.id];
@@ -240,25 +268,6 @@ export default function InspectionScreen() {
         );
 
       case 'file':
-        const captureImage = async () => {
-          const { status } = await ImagePicker.requestCameraPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Permission required', 'Camera permission is needed');
-            return;
-          }
-
-          const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 0.8,
-          });
-
-          if (!result.canceled && result.assets[0]) {
-            handleFieldChange(field.id, result.assets[0].uri);
-          }
-        };
-
         return (
           <AnimatedView
             key={field.id}
@@ -290,7 +299,7 @@ export default function InspectionScreen() {
                     backgroundColor: `${colors.primary}14`,
                   },
                 ]}
-                onPress={captureImage}
+                onPress={() => handleCaptureImage(field.id)}
                 activeOpacity={0.7}
               >
                 <Ionicons
@@ -333,17 +342,69 @@ export default function InspectionScreen() {
 
           <AnimatedView
             entering={FadeInUp.duration(M3Motion.duration.medium).delay(50)}
-            style={[styles.offlineBanner, { backgroundColor: `${colors.primary}1A` }]}
+            style={[
+              styles.offlineBanner,
+              { backgroundColor: isOnline ? `${colors.tertiary}1A` : `${colors.primary}1A` }
+            ]}
           >
             <Ionicons
-              name="cloud-offline"
+              name={isOnline ? "cloud-done" : "cloud-offline"}
               size={20}
-              color={colors.primary}
+              color={isOnline ? colors.tertiary : colors.primary}
               style={styles.offlineIcon}
             />
-            <Text style={[styles.offlineText, { color: colors.primary }]}>
-              Offline Mode - Will sync when online
+            <Text style={[styles.offlineText, { color: isOnline ? colors.tertiary : colors.primary }]}>
+              {isOnline ? 'Online - Data will sync automatically' : 'Offline Mode - Will sync when online'}
             </Text>
+          </AnimatedView>
+
+          {/* Site Selector */}
+          <AnimatedView
+            entering={FadeInUp.duration(M3Motion.duration.medium).delay(100)}
+            style={[
+              styles.section,
+              {
+                backgroundColor: colors.surfaceContainer,
+                shadowColor: colors.shadow,
+              },
+            ]}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
+              Site Selection
+            </Text>
+            <Text style={[styles.fieldLabel, { color: colors.onSurface }]}>
+              Select Site <Text style={[styles.required, { color: colors.error }]}>*</Text>
+            </Text>
+            <View style={styles.optionsRow}>
+              {sites.map((site) => (
+                <TouchableOpacity
+                  key={site.id}
+                  style={[
+                    styles.selectOption,
+                    {
+                      backgroundColor:
+                        formValues.siteId === site.id ? colors.primary : colors.surfaceContainerLow,
+                      borderColor: colors.outlineVariant,
+                      borderWidth: formValues.siteId === site.id ? 0 : 1,
+                    },
+                  ]}
+                  onPress={() => handleFieldChange('siteId', site.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.selectOptionText,
+                      {
+                        color: formValues.siteId === site.id ? colors.onPrimary : colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    {site.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {errors.siteId && <Text style={[styles.errorText, { color: colors.error }]}>{errors.siteId}</Text>}
           </AnimatedView>
 
           {FORM_SCHEMA.sections.map((section, sectionIndex) => (

@@ -1,12 +1,13 @@
 import '../global.css';
 import { Stack } from 'expo-router';
 import { Provider } from 'react-redux';
-import { store } from '../store';
+import { PersistGate } from 'redux-persist/integration/react';
+import { store, persistor } from '../store';
 import { useFonts } from 'expo-font';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MaterialYouProvider, useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -74,6 +75,13 @@ function AppContent() {
           }}
         />
         <Stack.Screen
+          name="inspection/[id]"
+          options={{
+            title: 'Inspection Details',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
           name="styleguide"
           options={{
             title: 'Style Guide',
@@ -97,9 +105,18 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <Provider store={store}>
-        <MaterialYouProvider>
-          <AppContent />
-        </MaterialYouProvider>
+        <PersistGate
+          loading={
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator size="large" />
+            </View>
+          }
+          persistor={persistor}
+        >
+          <MaterialYouProvider>
+            <AppContent />
+          </MaterialYouProvider>
+        </PersistGate>
       </Provider>
     </SafeAreaProvider>
   );

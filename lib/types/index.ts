@@ -74,3 +74,14 @@ export interface Activity {
   icon: string; // MaterialCommunityIcons name
   synced: boolean;
 }
+
+export interface InspectionForm {
+  id: string;
+  timestamp: number;
+  synced: boolean;
+  siteId?: string;
+  siteName?: string;
+  data: Record<string, any>;
+  images: Record<string, string>; // fieldId -> file URI
+  activityId?: string; // Link to activity feed
+}

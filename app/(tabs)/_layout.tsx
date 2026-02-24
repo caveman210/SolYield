@@ -54,6 +54,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: 'History',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="file-document-multiple" color={color} size={28} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

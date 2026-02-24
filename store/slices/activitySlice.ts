@@ -1,4 +1,4 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit';
 import { Activity } from '../../lib/types';
 
 interface ActivityState {
@@ -63,11 +63,21 @@ export const {
 // Selectors
 export const selectAllActivities = (state: { activity: ActivityState }) =>
   state.activity.activities;
-export const selectRecentActivities = (state: { activity: ActivityState }, limit: number = 5) =>
-  state.activity.activities.slice(0, limit);
-export const selectActivitiesBySite = (state: { activity: ActivityState }, siteId: string) =>
-  state.activity.activities.filter((a) => a.siteId === siteId);
-export const selectUnsyncedActivities = (state: { activity: ActivityState }) =>
-  state.activity.activities.filter((a) => !a.synced);
+
+// Memoized selectors to prevent unnecessary re-renders
+export const selectRecentActivities = createSelector(
+  [selectAllActivities, (_state: { activity: ActivityState }, limit: number = 5) => limit],
+  (activities, limit) => activities.slice(0, limit)
+);
+
+export const selectActivitiesBySite = createSelector(
+  [selectAllActivities, (_state: { activity: ActivityState }, siteId: string) => siteId],
+  (activities, siteId) => activities.filter((a) => a.siteId === siteId)
+);
+
+export const selectUnsyncedActivities = createSelector(
+  [selectAllActivities],
+  (activities) => activities.filter((a) => !a.synced)
+);
 
 export default activitySlice.reducer;

@@ -3,14 +3,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Calendar from 'expo-calendar';
-import { SCHEDULE } from '../../lib/data/schedule';
-import { SITES } from '../../lib/data/sites';
 import { ScheduleVisit } from '../../lib/types';
 import { formatDate, isToday, isTomorrow } from '../../lib/utils/dateFormatter';
 import { M3Motion, M3Spacing } from '../../lib/design';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
+import { useScheduleManagement } from '../../lib/hooks/useScheduleManagement';
+import { useSiteManagement } from '../../lib/hooks/useSiteManagement';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -19,6 +19,8 @@ export default function ScheduleScreen() {
   const colors = useMaterialYouColors();
   const insets = useSafeAreaInsets();
   const [syncing, setSyncing] = useState(false);
+  const { allVisits } = useScheduleManagement();
+  const { allSites } = useSiteManagement();
 
   const handleSyncCalendar = async () => {
     setSyncing(true);
@@ -26,7 +28,7 @@ export default function ScheduleScreen() {
     if (status === 'granted') {
       setTimeout(() => {
         setSyncing(false);
-        alert(`Synced ${SCHEDULE.length} visits to calendar!`);
+        alert(`Synced ${allVisits.length} visits to calendar!`);
       }, 1500);
     } else {
       setSyncing(false);
@@ -51,7 +53,7 @@ export default function ScheduleScreen() {
   };
 
   const renderVisit = ({ item, index }: { item: ScheduleVisit; index: number }) => {
-    const site = SITES.find((s) => s.id === item.siteId);
+    const site = allSites.find((s) => s.id === item.siteId);
     const badgeStyle = getDateBadgeStyle(item.date);
 
     return (
@@ -111,7 +113,7 @@ export default function ScheduleScreen() {
           entering={FadeInUp.duration(M3Motion.duration.medium).delay(50)}
           style={[styles.headerSubtitle, { color: colors.onSurfaceVariant }]}
         >
-          {SCHEDULE.length} scheduled maintenance visits
+          {allVisits.length} scheduled maintenance visits
         </Animated.Text>
         <AnimatedTouchableOpacity
           entering={FadeInUp.duration(M3Motion.duration.medium).delay(100)}
@@ -141,15 +143,36 @@ export default function ScheduleScreen() {
         </AnimatedTouchableOpacity>
       </View>
       <FlatList
-        data={SCHEDULE}
+        data={allVisits}
         renderItem={renderVisit}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: insets.bottom + M3Spacing.xl },
+          { paddingBottom: insets.bottom + M3Spacing.xl + 80 }, // Extra padding for FAB
         ]}
         showsVerticalScrollIndicator={false}
       />
+      
+      {/* Floating Action Button (FAB) */}
+      <Animated.View
+        entering={FadeInUp.duration(M3Motion.duration.medium).delay(200)}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: colors.primaryContainer,
+            shadowColor: colors.shadow,
+            bottom: insets.bottom + 80, // Position above tab bar
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.fabTouchable}
+          onPress={() => router.push('/add-visit')}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="plus" size={28} color={colors.onPrimaryContainer} />
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
@@ -247,5 +270,22 @@ const styles = StyleSheet.create({
   },
   siteText: {
     fontSize: 14,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  fabTouchable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
