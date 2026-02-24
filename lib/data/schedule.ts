@@ -1,0 +1,18 @@
+import { ScheduleVisit } from '../types';
+
+export const SCHEDULE: ScheduleVisit[] = [
+  {
+    id: 'visit_101',
+    siteId: 'site_01',
+    date: '2025-02-20',
+    time: '09:00 AM',
+    title: 'Quarterly Inspection',
+  },
+  {
+    id: 'visit_102',
+    siteId: 'site_02',
+    date: '2025-02-21',
+    time: '02:00 PM',
+    title: 'Inverter Maintenance',
+  },
+];
