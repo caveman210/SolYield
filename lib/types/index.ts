@@ -73,6 +73,7 @@ export interface Activity {
   timestamp: number; // Unix timestamp in milliseconds
   icon: string; // MaterialCommunityIcons name
   synced: boolean;
+  metadata?: Record<string, any>; // Additional metadata for the activity
 }
 
 export interface InspectionForm {

@@ -1,6 +1,6 @@
 /**
  * useGeofencing Hook
- * 
+ *
  * Provides geofencing and location-based check-in functionality.
  * Separates business logic from UI components.
  */
@@ -41,13 +41,10 @@ export const useGeofencing = () => {
   const requestLocationPermissions = useCallback(async (): Promise<boolean> => {
     try {
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-      
+
       if (foregroundStatus !== 'granted') {
         setLocationError('Location permission denied');
-        Alert.alert(
-          'Permission Required',
-          'Location access is needed to check in at sites.'
-        );
+        Alert.alert('Permission Required', 'Location access is needed to check in at sites.');
         return false;
       }
 
@@ -73,9 +70,51 @@ export const useGeofencing = () => {
         return null;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      // Check if location services are enabled
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        setLocationError('Location services are disabled');
+        setIsLoadingLocation(false);
+        Alert.alert(
+          'Location Services Disabled',
+          'Please enable location services in your device settings to use this feature.',
+          [{ text: 'OK', style: 'cancel' }]
+        );
+        return null;
+      }
+
+      // Try multiple times with different accuracy levels for better compatibility
+      let location = null;
+      const accuracyLevels = [
+        Location.Accuracy.BestForNavigation,
+        Location.Accuracy.High,
+        Location.Accuracy.Balanced,
+        Location.Accuracy.Low,
+      ];
+
+      for (const accuracy of accuracyLevels) {
+        try {
+          location = await Location.getCurrentPositionAsync({
+            accuracy,
+          });
+          break; // Success, exit loop
+        } catch (err: any) {
+          console.log(`Failed with accuracy ${accuracy}:`, err.message);
+          // Continue to next accuracy level
+        }
+      }
+
+      if (!location) {
+        // Last resort - try to get last known position
+        location = await Location.getLastKnownPositionAsync({
+          maxAge: 300000, // 5 minutes
+          requiredAccuracy: 1000, // 1km
+        });
+      }
+
+      if (!location) {
+        throw new Error('Unable to get location with any accuracy level');
+      }
 
       const locationState: LocationState = {
         latitude: location.coords.latitude,
@@ -87,11 +126,23 @@ export const useGeofencing = () => {
       setCurrentLocation(locationState);
       setIsLoadingLocation(false);
       return locationState;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error getting current location:', error);
-      setLocationError('Failed to get location');
+
+      // Handle specific error types
+      let errorMessage = 'Failed to get location';
+      if (error?.message?.includes('settings') || error?.message?.includes('disabled')) {
+        errorMessage = 'Location services are disabled. Please enable them in device settings.';
+      } else if (error?.message?.includes('timeout')) {
+        errorMessage = 'Location request timed out. Please try again.';
+      } else if (error?.message?.includes('permission')) {
+        errorMessage = 'Location permission is required.';
+      } else {
+        errorMessage = 'Unable to get your location. Please check your device settings.';
+      }
+
+      setLocationError(errorMessage);
       setIsLoadingLocation(false);
-      Alert.alert('Error', 'Failed to get your current location. Please try again.');
       return null;
     }
   }, [requestLocationPermissions]);
@@ -122,7 +173,11 @@ export const useGeofencing = () => {
    * Check if current location is within geofence of a site
    */
   const isWithinGeofence = useCallback(
-    (site: Site, location?: LocationState, radiusMeters: number = GEOFENCE_RADIUS_METERS): boolean => {
+    (
+      site: Site,
+      location?: LocationState,
+      radiusMeters: number = GEOFENCE_RADIUS_METERS
+    ): boolean => {
       const loc = location || currentLocation;
       if (!loc) return false;
 
@@ -146,12 +201,7 @@ export const useGeofencing = () => {
       const loc = location || currentLocation;
       if (!loc) return null;
 
-      return calculateDistance(
-        loc.latitude,
-        loc.longitude,
-        site.location.lat,
-        site.location.lng
-      );
+      return calculateDistance(loc.latitude, loc.longitude, site.location.lat, site.location.lng);
     },
     [currentLocation, calculateDistance]
   );
@@ -186,10 +236,11 @@ export const useGeofencing = () => {
         if (withinFence) {
           // Add activity for successful check-in
           addActivity({
-            type: 'checkin',
+            type: 'check-in',
             title: 'Site Check-in',
             description: `Checked in at ${site.name}`,
             siteId: site.id,
+            icon: 'map-marker-check',
             metadata: {
               distance: Math.round(distance),
               accuracy: location.accuracy,

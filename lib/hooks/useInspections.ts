@@ -1,7 +1,13 @@
 import { useCallback, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store';
-import { submitForm, saveDraft, clearDraft, markSynced, deleteForm } from '../../store/slices/maintenanceSlice';
+import {
+  submitForm,
+  saveDraft,
+  clearDraft,
+  markSynced,
+  deleteForm,
+} from '../../store/slices/maintenanceSlice';
 import { addActivity } from '../../store/slices/activitySlice';
 import { InspectionForm } from '../types';
 import * as FileSystem from 'expo-file-system';
@@ -66,7 +72,8 @@ export function useInspections() {
           if (typeof value === 'string' && value.startsWith('file://')) {
             try {
               const fileName = `inspection_${Date.now()}_${key}.jpg`;
-              const newPath = `${FileSystem.documentDirectory}${fileName}`;
+              const cacheDir = FileSystem.Paths.cache;
+              const newPath = `${cacheDir}/${fileName}`;
               await FileSystem.copyAsync({
                 from: value,
                 to: newPath,
@@ -93,15 +100,28 @@ export function useInspections() {
         // Create activity entry
         dispatch(
           addActivity({
-            id: activityId,
             type: 'inspection',
             title: 'Inspection Completed',
-            description: siteName ? `Completed inspection at ${siteName}` : 'Inspection form submitted',
+            description: siteName
+              ? `Completed inspection at ${siteName}`
+              : 'Inspection form submitted',
             siteId,
             siteName,
-            timestamp: Date.now(),
             icon: 'clipboard-check',
-            synced: false,
+          })
+        );
+
+        // Create activity entry
+        dispatch(
+          addActivity({
+            type: 'inspection',
+            title: 'Inspection Completed',
+            description: siteName
+              ? `Completed inspection at ${siteName}`
+              : 'Inspection form submitted',
+            siteId,
+            siteName,
+            icon: 'clipboard-check',
           })
         );
 
@@ -197,14 +217,14 @@ export function useInspections() {
     forms,
     currentDraft,
     isSyncing,
-    
+
     // Getters
     getAllInspections,
     getInspectionById,
     getInspectionsBySite,
     getPendingInspections,
     getInspectionStats,
-    
+
     // Actions
     submitInspection,
     saveInspectionDraft,
@@ -232,27 +252,30 @@ export function useInspectionValidation() {
     return null;
   }, []);
 
-  const validateFormData = useCallback((values: Record<string, any>, schema: any): boolean => {
-    const newErrors: Record<string, string> = {};
+  const validateFormData = useCallback(
+    (values: Record<string, any>, schema: any): boolean => {
+      const newErrors: Record<string, string> = {};
 
-    // Check for siteId
-    if (!values.siteId) {
-      newErrors.siteId = 'Site selection is required';
-    }
+      // Check for siteId
+      if (!values.siteId) {
+        newErrors.siteId = 'Site selection is required';
+      }
 
-    // Check all form fields
-    schema.sections.forEach((section: any) => {
-      section.fields.forEach((field: any) => {
-        const error = validateField(field, values[field.id]);
-        if (error) {
-          newErrors[field.id] = error;
-        }
+      // Check all form fields
+      schema.sections.forEach((section: any) => {
+        section.fields.forEach((field: any) => {
+          const error = validateField(field, values[field.id]);
+          if (error) {
+            newErrors[field.id] = error;
+          }
+        });
       });
-    });
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [validateField]);
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
+    },
+    [validateField]
+  );
 
   const clearErrors = useCallback(() => {
     setErrors({});
@@ -271,63 +294,69 @@ export function useInspectionValidation() {
  * Hook for image capture and management
  */
 export function useImageCapture() {
-  const captureImage = useCallback(async (options?: {
-    quality?: number;
-    allowsEditing?: boolean;
-    aspect?: [number, number];
-  }): Promise<string | null> => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
+  const captureImage = useCallback(
+    async (options?: {
+      quality?: number;
+      allowsEditing?: boolean;
+      aspect?: [number, number];
+    }): Promise<string | null> => {
+      try {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          return null;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: options?.allowsEditing ?? true,
+          aspect: options?.aspect ?? [4, 3],
+          quality: options?.quality ?? 0.8,
+        });
+
+        if (!result.canceled && result.assets[0]) {
+          return result.assets[0].uri;
+        }
+
+        return null;
+      } catch (error) {
+        console.error('Camera error:', error);
         return null;
       }
+    },
+    []
+  );
 
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: options?.allowsEditing ?? true,
-        aspect: options?.aspect ?? [4, 3],
-        quality: options?.quality ?? 0.8,
-      });
+  const pickImageFromGallery = useCallback(
+    async (options?: {
+      quality?: number;
+      allowsEditing?: boolean;
+      aspect?: [number, number];
+    }): Promise<string | null> => {
+      try {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          return null;
+        }
 
-      if (!result.canceled && result.assets[0]) {
-        return result.assets[0].uri;
-      }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: options?.allowsEditing ?? true,
+          aspect: options?.aspect ?? [4, 3],
+          quality: options?.quality ?? 0.8,
+        });
 
-      return null;
-    } catch (error) {
-      console.error('Camera error:', error);
-      return null;
-    }
-  }, []);
+        if (!result.canceled && result.assets[0]) {
+          return result.assets[0].uri;
+        }
 
-  const pickImageFromGallery = useCallback(async (options?: {
-    quality?: number;
-    allowsEditing?: boolean;
-    aspect?: [number, number];
-  }): Promise<string | null> => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
+        return null;
+      } catch (error) {
+        console.error('Image picker error:', error);
         return null;
       }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: options?.allowsEditing ?? true,
-        aspect: options?.aspect ?? [4, 3],
-        quality: options?.quality ?? 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        return result.assets[0].uri;
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Image picker error:', error);
-      return null;
-    }
-  }, []);
+    },
+    []
+  );
 
   return {
     captureImage,

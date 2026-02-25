@@ -1,8 +1,12 @@
 /**
  * Add Site Screen
- * 
- * Form for creating new sites with interactive map location picker.
- * Users can tap on map to select latitude/longitude coordinates.
+ *
+ * Form for creating new sites with location coordinates.
+ * Users can manually enter coordinates or use their current location.
+ *
+ * NOTE: Map view removed temporarily to avoid Google Maps API key requirement.
+ * Using simple coordinate input fields instead - works on all platforms without API keys.
+ * If you need visual map in the future, uncomment the react-native-maps code at the bottom.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -16,33 +20,44 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
-import { router } from 'expo-router';
-import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
+import { router, Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSiteManagement } from '../lib/hooks/useSiteManagement';
+import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
+
+/*
+ * OLD CODE - react-native-maps (requires Google Maps API key on Android)
+ * Keeping this commented for future reference if you want to add visual map back
+ *
+ * import MapView, { Marker, Region, MapPressEvent } from 'react-native-maps';
+ *
+ * Then you'll need to:
+ * 1. Get Google Maps API key from Google Cloud Console
+ * 2. Add to app.json:
+ *    "android": {
+ *      "config": {
+ *        "googleMaps": {
+ *          "apiKey": "YOUR_API_KEY_HERE"
+ *        }
+ *      }
+ *    }
+ */
 
 export default function AddSiteScreen() {
   const { createSite } = useSiteManagement();
+  const colors = useMaterialYouColors();
 
   // Form state
   const [siteName, setSiteName] = useState('');
   const [capacity, setCapacity] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Map state
-  const [mapRegion, setMapRegion] = useState<Region>({
-    latitude: 20.5937, // Center of India
-    longitude: 78.9629,
-    latitudeDelta: 15,
-    longitudeDelta: 15,
-  });
-
-  /**
-   * Get user's current location and center map
-   */
   const useCurrentLocation = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -52,40 +67,24 @@ export default function AddSiteScreen() {
       }
 
       const location = await Location.getCurrentPositionAsync({});
-      const newRegion = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      };
+      setLatitude(location.coords.latitude.toFixed(6));
+      setLongitude(location.coords.longitude.toFixed(6));
 
-      setMapRegion(newRegion);
-      setSelectedLocation({
-        lat: location.coords.latitude,
-        lng: location.coords.longitude,
-      });
+      Alert.alert('Success', 'Current location has been filled in!');
     } catch (error) {
       console.error('Error getting location:', error);
       Alert.alert('Error', 'Failed to get current location. Please try again.');
     }
   }, []);
 
-  /**
-   * Handle map press to select location
-   */
-  const handleMapPress = useCallback((event: MapPressEvent) => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setSelectedLocation({
-      lat: latitude,
-      lng: longitude,
-    });
-  }, []);
+  const openGoogleMaps = useCallback(() => {
+    const lat = latitude || '20.5937';
+    const lng = longitude || '78.9629';
+    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    Linking.openURL(url);
+  }, [latitude, longitude]);
 
-  /**
-   * Validate form and submit
-   */
   const handleSubmit = useCallback(() => {
-    // Validation
     if (!siteName.trim()) {
       Alert.alert('Validation Error', 'Please enter a site name.');
       return;
@@ -96,184 +95,252 @@ export default function AddSiteScreen() {
       return;
     }
 
-    if (!selectedLocation) {
-      Alert.alert('Validation Error', 'Please select a location on the map.');
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      Alert.alert('Validation Error', 'Please enter a valid latitude between -90 and 90.');
+      return;
+    }
+
+    if (isNaN(lng) || lng < -180 || lng > 180) {
+      Alert.alert('Validation Error', 'Please enter a valid longitude between -180 and 180.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Create site
       createSite({
         name: siteName.trim(),
         capacity: capacity.trim(),
-        location: selectedLocation,
+        location: { lat, lng },
       });
 
-      Alert.alert(
-        'Success',
-        `Site "${siteName}" has been created successfully!`,
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
-      );
+      Alert.alert('Success', `Site "${siteName}" has been created successfully!`, [
+        {
+          text: 'OK',
+          onPress: () => router.back(),
+        },
+      ]);
     } catch (error) {
       console.error('Error creating site:', error);
       Alert.alert('Error', 'Failed to create site. Please try again.');
       setIsSubmitting(false);
     }
-  }, [siteName, capacity, selectedLocation, createSite]);
+  }, [siteName, capacity, latitude, longitude, createSite]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['bottom']}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1F2937" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add New Site</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: 'Add New Site',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.onSurface,
+          presentation: 'modal',
+        }}
+      />
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <View style={[styles.formSection, { backgroundColor: colors.surfaceContainer }]}>
+            <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Site Information</Text>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Form Section */}
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Site Information</Text>
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Site Name *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    borderColor: colors.outline,
+                    color: colors.onSurface,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                placeholder="e.g., Solar Park Alpha"
+                value={siteName}
+                onChangeText={setSiteName}
+                placeholderTextColor={colors.onSurfaceVariant}
+              />
+            </View>
 
-          {/* Site Name Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Site Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Solar Park Alpha"
-              value={siteName}
-              onChangeText={setSiteName}
-              placeholderTextColor="#9CA3AF"
-            />
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Capacity *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    borderColor: colors.outline,
+                    color: colors.onSurface,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                placeholder="e.g., 500 MW"
+                value={capacity}
+                onChangeText={setCapacity}
+                placeholderTextColor={colors.onSurfaceVariant}
+              />
+              <Text style={[styles.hint, { color: colors.outline }]}>
+                Include units (e.g., MW, kW)
+              </Text>
+            </View>
           </View>
 
-          {/* Capacity Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Capacity *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., 500 MW"
-              value={capacity}
-              onChangeText={setCapacity}
-              placeholderTextColor="#9CA3AF"
-            />
-            <Text style={styles.hint}>Include units (e.g., MW, kW)</Text>
-          </View>
-        </View>
-
-        {/* Map Section */}
-        <View style={styles.mapSection}>
-          <View style={styles.mapHeader}>
-            <Text style={styles.sectionTitle}>Location *</Text>
-            <TouchableOpacity style={styles.locationButton} onPress={useCurrentLocation}>
-              <MaterialCommunityIcons name="crosshairs-gps" size={20} color="#3B82F6" />
-              <Text style={styles.locationButtonText}>Use My Location</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.mapInstructions}>Tap on the map to select site location</Text>
-
-          <View style={styles.mapContainer}>
-            <MapView
-              style={styles.map}
-              region={mapRegion}
-              onRegionChangeComplete={setMapRegion}
-              onPress={handleMapPress}
-            >
-              {selectedLocation && (
-                <Marker
-                  coordinate={{
-                    latitude: selectedLocation.lat,
-                    longitude: selectedLocation.lng,
-                  }}
-                  title={siteName || 'New Site'}
-                  pinColor="#EF4444"
+          <View style={[styles.locationSection, { backgroundColor: colors.surfaceContainer }]}>
+            <View style={styles.locationHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Location *</Text>
+              <TouchableOpacity
+                style={[styles.locationButton, { backgroundColor: colors.primaryContainer }]}
+                onPress={useCurrentLocation}
+              >
+                <MaterialCommunityIcons
+                  name="crosshairs-gps"
+                  size={18}
+                  color={colors.onPrimaryContainer}
                 />
-              )}
-            </MapView>
-          </View>
-
-          {/* Coordinates Display */}
-          {selectedLocation && (
-            <View style={styles.coordinatesBox}>
-              <MaterialCommunityIcons name="map-marker" size={20} color="#6B7280" />
-              <View style={styles.coordinatesText}>
-                <Text style={styles.coordinateLabel}>Selected Coordinates:</Text>
-                <Text style={styles.coordinateValue}>
-                  {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                <Text style={[styles.locationButtonText, { color: colors.onPrimaryContainer }]}>
+                  Use My Location
                 </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.locationInstructions, { color: colors.onSurfaceVariant }]}>
+              Enter coordinates manually or use your current location
+            </Text>
+
+            {/* Coordinate Input Fields */}
+            <View style={styles.coordinateInputs}>
+              <View style={styles.coordinateInputGroup}>
+                <Text style={[styles.coordinateLabel, { color: colors.onSurfaceVariant }]}>
+                  Latitude *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.coordinateInput,
+                    {
+                      borderColor: colors.outline,
+                      color: colors.onSurface,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                  placeholder="28.6139"
+                  value={latitude}
+                  onChangeText={setLatitude}
+                  keyboardType="numeric"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                />
+                <Text style={[styles.coordinateHint, { color: colors.outline }]}>-90 to 90</Text>
+              </View>
+              <View style={styles.coordinateInputGroup}>
+                <Text style={[styles.coordinateLabel, { color: colors.onSurfaceVariant }]}>
+                  Longitude *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.coordinateInput,
+                    {
+                      borderColor: colors.outline,
+                      color: colors.onSurface,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                  placeholder="77.2090"
+                  value={longitude}
+                  onChangeText={setLongitude}
+                  keyboardType="numeric"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                />
+                <Text style={[styles.coordinateHint, { color: colors.outline }]}>-180 to 180</Text>
               </View>
             </View>
-          )}
-        </View>
-      </ScrollView>
 
-      {/* Submit Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={isSubmitting}
+            {/* View on Map Button */}
+            {latitude && longitude && (
+              <TouchableOpacity
+                style={[styles.mapButton, { backgroundColor: colors.secondaryContainer }]}
+                onPress={openGoogleMaps}
+              >
+                <MaterialCommunityIcons
+                  name="map-search"
+                  size={20}
+                  color={colors.onSecondaryContainer}
+                />
+                <Text style={[styles.mapButtonText, { color: colors.onSecondaryContainer }]}>
+                  View on Google Maps
+                </Text>
+                <MaterialCommunityIcons
+                  name="open-in-new"
+                  size={16}
+                  color={colors.onSecondaryContainer}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Info Box */}
+          <View style={[styles.infoBox, { backgroundColor: colors.tertiaryContainer }]}>
+            <MaterialCommunityIcons name="information" size={20} color={colors.tertiary} />
+            <Text style={[styles.infoText, { color: colors.onTertiaryContainer }]}>
+              You can find coordinates by searching your location on Google Maps and copying the
+              latitude/longitude values.
+            </Text>
+          </View>
+        </ScrollView>
+
+        <View
+          style={[
+            styles.footer,
+            { backgroundColor: colors.surface, borderTopColor: colors.outlineVariant },
+          ]}
         >
-          <MaterialCommunityIcons name="check-circle" size={24} color="#FFF" />
-          <Text style={styles.submitButtonText}>
-            {isSubmitting ? 'Creating Site...' : 'Create Site'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              {
+                backgroundColor: isSubmitting ? colors.surfaceContainerHigh : colors.primary,
+              },
+            ]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            <MaterialCommunityIcons name="check-circle" size={24} color={colors.onPrimary} />
+            <Text style={[styles.submitButtonText, { color: colors.onPrimary }]}>
+              {isSubmitting ? 'Creating Site...' : 'Create Site'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
+  keyboardView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
   },
   formSection: {
-    padding: 16,
-    backgroundColor: '#FFF',
-    marginBottom: 8,
+    padding: 20,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 16,
+    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 16,
+    fontSize: 18,
+    fontWeight: '500',
+    marginBottom: 20,
   },
   inputGroup: {
     marginBottom: 20,
@@ -281,29 +348,26 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#374151',
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 16,
-    color: '#1F2937',
-    backgroundColor: '#FFF',
   },
   hint: {
     fontSize: 12,
-    color: '#6B7280',
-    marginTop: 4,
+    marginTop: 6,
   },
-  mapSection: {
-    padding: 16,
-    backgroundColor: '#FFF',
+  locationSection: {
+    padding: 20,
+    marginHorizontal: 16,
+    borderRadius: 16,
+    marginBottom: 12,
   },
-  mapHeader: {
+  locationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -312,71 +376,82 @@ const styles = StyleSheet.create({
   locationButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
     gap: 6,
   },
   locationButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
-    color: '#3B82F6',
   },
-  mapInstructions: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 12,
+  locationInstructions: {
+    fontSize: 13,
+    marginBottom: 16,
   },
-  mapContainer: {
-    height: 300,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  map: {
-    flex: 1,
-  },
-  coordinatesBox: {
+  coordinateInputs: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    gap: 8,
+    gap: 12,
+    marginBottom: 16,
   },
-  coordinatesText: {
+  coordinateInputGroup: {
     flex: 1,
   },
   coordinateLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 2,
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 6,
   },
-  coordinateValue: {
+  coordinateInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+  },
+  coordinateHint: {
+    fontSize: 11,
+    marginTop: 4,
+  },
+  mapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  mapButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#1F2937',
+  },
+  infoBox: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 20,
   },
   footer: {
     padding: 16,
-    backgroundColor: '#FFF',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
   },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    borderRadius: 16,
     gap: 8,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#9CA3AF',
   },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFF',
   },
 });

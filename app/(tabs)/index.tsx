@@ -6,15 +6,15 @@ import {
   TouchableOpacity,
   Animated as RNAnimated,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown, FadeInUp, SlideInRight } from 'react-native-reanimated';
+import Animated, { FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import StyledText from '../components/StyledText';
 import ActivityCard from '../components/ActivityCard';
 import {
-  useMaterialYouColors,
   useAnimatedMaterialYouColors,
+  useMaterialYouColors,
 } from '../../lib/hooks/MaterialYouProvider';
 import { useRecentActivities } from '../../lib/hooks/useActivityManager';
 import { M3Typography, M3Shape, M3Elevation, M3Spacing, M3Motion } from '../../lib/design/tokens';
@@ -23,9 +23,12 @@ import { Activity } from '../../lib/types';
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 /**
- * Dashboard Screen Component (Presentation)
- * Displays overview with stats, recent activities, and quick actions
- * Business logic delegated to custom hooks
+ * Dashboard Screen
+ *
+ * ✅ All widgets use Material You colors INLINE (like Overview)
+ * ✅ No intermediate components or prop passing
+ * ✅ Colors applied directly from useMaterialYouColors()
+ * ✅ This prevents any flickering or re-rendering issues
  */
 export default function Dashboard() {
   const colors = useMaterialYouColors();
@@ -33,11 +36,14 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  // Get recent activities from Redux store via hook
   const { activities: recentActivities } = useRecentActivities(3);
 
+  // TODO: Replace with actual data from Redux/API
+  const activeSitesCount = 12;
+  const performancePercentage = '92%';
+  const scheduledVisitsToday = 3;
+
   const handleActivityPress = (activity: Activity) => {
-    // Navigate to relevant screen based on activity
     if (activity.siteId) {
       router.push(`/site/${activity.siteId}` as any);
     }
@@ -45,7 +51,7 @@ export default function Dashboard() {
 
   return (
     <RNAnimated.View style={{ flex: 1, backgroundColor: animatedColors.background }}>
-      {/* Header with safe area insets */}
+      {/* Header */}
       <RNAnimated.View
         style={[
           styles.header,
@@ -122,7 +128,7 @@ export default function Dashboard() {
                     marginTop: 8,
                   }}
                 >
-                  3
+                  {scheduledVisitsToday}
                 </StyledText>
                 <StyledText
                   style={{
@@ -141,8 +147,9 @@ export default function Dashboard() {
           </View>
         </Animated.View>
 
-        {/* Quick Stats Grid */}
+        {/* Quick Stats Grid - INLINE Material You colors (like Overview) */}
         <View style={styles.statsGrid}>
+          {/* Active Sites Widget */}
           <AnimatedTouchable
             entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(200)}
             style={[
@@ -166,7 +173,7 @@ export default function Dashboard() {
                 marginTop: M3Spacing.md,
               }}
             >
-              12
+              {activeSitesCount}
             </StyledText>
             <StyledText
               style={{
@@ -180,6 +187,7 @@ export default function Dashboard() {
             </StyledText>
           </AnimatedTouchable>
 
+          {/* Performance Widget */}
           <AnimatedTouchable
             entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(250)}
             style={[
@@ -203,7 +211,7 @@ export default function Dashboard() {
                 marginTop: M3Spacing.md,
               }}
             >
-              92%
+              {performancePercentage}
             </StyledText>
             <StyledText
               style={{
@@ -245,7 +253,6 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Activity Cards */}
           <View style={styles.activityList}>
             {recentActivities.length > 0 ? (
               recentActivities.map((activity, index) => (
@@ -335,7 +342,6 @@ export default function Dashboard() {
           </View>
         </Animated.View>
 
-        {/* Bottom padding for tab bar and safe area */}
         <View style={{ height: M3Spacing.xxxl + insets.bottom }} />
       </ScrollView>
     </RNAnimated.View>
@@ -400,7 +406,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: M3Spacing.lg,
+    marginBottom: M3Spacing.md,
   },
   activityList: {
     gap: M3Spacing.sm,
@@ -408,7 +414,7 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: M3Spacing.xl,
+    paddingVertical: M3Spacing.xxl,
   },
   quickActionsGrid: {
     flexDirection: 'row',
@@ -416,14 +422,12 @@ const styles = StyleSheet.create({
     gap: M3Spacing.md,
   },
   quickActionButton: {
-    width: '47.5%',
-    aspectRatio: 1,
+    width: '48%',
     borderRadius: M3Shape.large,
     padding: M3Spacing.lg,
   },
   quickActionContent: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
 });

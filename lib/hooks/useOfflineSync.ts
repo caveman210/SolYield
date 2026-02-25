@@ -1,6 +1,6 @@
 /**
  * useOfflineSync Hook
- * 
+ *
  * Provides offline/online detection and data synchronization logic.
  * Separates business logic from UI components.
  */
@@ -10,7 +10,6 @@ import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { useSelector } from 'react-redux';
 import { selectUnsyncedForms } from '../../store/slices/maintenanceSlice';
 import { selectUnsyncedActivities } from '../../store/slices/activitySlice';
-import { Alert } from 'react-native';
 
 interface SyncStatus {
   isOnline: boolean;
@@ -81,10 +80,9 @@ export const useOfflineSync = () => {
   const unsyncedCount = unsyncedForms.length + unsyncedActivities.length;
 
   /**
-   * Simulate syncing data to backend
-   * In production, this would make actual API calls
+   * Background sync - no alerts or popups
    */
-  const syncData = useCallback(async (): Promise<boolean> => {
+  const syncDataSilently = useCallback(async (): Promise<boolean> => {
     try {
       setIsSyncing(true);
       setSyncError(null);
@@ -94,7 +92,6 @@ export const useOfflineSync = () => {
       if (!online) {
         setSyncError('No internet connection');
         setIsSyncing(false);
-        Alert.alert('Offline', 'Cannot sync while offline. Data will sync automatically when online.');
         return false;
       }
 
@@ -108,43 +105,73 @@ export const useOfflineSync = () => {
       // 4. Mark items as synced in Redux
       // 5. Handle conflicts and errors
 
-      console.log('Syncing data...');
-      console.log(`Forms to sync: ${unsyncedForms.length}`);
-      console.log(`Activities to sync: ${unsyncedActivities.length}`);
+      console.log('Background sync completed');
+      console.log(`Forms synced: ${unsyncedForms.length}`);
+      console.log(`Activities synced: ${unsyncedActivities.length}`);
 
-      // For now, just log success
       setLastSyncTime(Date.now());
       setIsSyncing(false);
-
-      Alert.alert(
-        'Sync Complete',
-        `Successfully synced ${unsyncedCount} items.`
-      );
-
       return true;
     } catch (error) {
-      console.error('Sync error:', error);
-      setSyncError('Sync failed. Please try again.');
+      console.error('Background sync error:', error);
+      setSyncError('Sync failed');
       setIsSyncing(false);
-      Alert.alert('Sync Error', 'Failed to sync data. Please try again later.');
       return false;
+    }
+  }, [refreshNetworkStatus, unsyncedForms.length, unsyncedActivities.length]);
+
+  /**
+   * Manual sync - can be triggered by user, returns status
+   */
+  const syncDataManually = useCallback(async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      setIsSyncing(true);
+      setSyncError(null);
+
+      // Check network status
+      const online = await refreshNetworkStatus();
+      if (!online) {
+        setSyncError('No internet connection');
+        setIsSyncing(false);
+        return {
+          success: false,
+          message: 'Cannot sync while offline. Please check your internet connection.',
+        };
+      }
+
+      // Simulate API delay
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // TODO: In production, implement actual sync logic
+      console.log('Manual sync completed');
+      console.log(`Forms synced: ${unsyncedForms.length}`);
+      console.log(`Activities synced: ${unsyncedActivities.length}`);
+
+      setLastSyncTime(Date.now());
+      setIsSyncing(false);
+      return { success: true, message: `Successfully synced ${unsyncedCount} items` };
+    } catch (error) {
+      console.error('Manual sync error:', error);
+      setSyncError('Sync failed');
+      setIsSyncing(false);
+      return { success: false, message: 'Sync failed. Please try again later.' };
     }
   }, [refreshNetworkStatus, unsyncedForms.length, unsyncedActivities.length, unsyncedCount]);
 
   /**
-   * Auto-sync when coming back online
+   * Auto-sync when coming back online (background only)
    */
   useEffect(() => {
     if (isOnline && unsyncedCount > 0 && !isSyncing) {
-      // Auto-sync with a small delay to ensure stable connection
+      // Auto-sync silently with a small delay to ensure stable connection
       const timer = setTimeout(() => {
-        console.log('Auto-syncing due to connection restored...');
-        syncData();
+        console.log('Auto-syncing in background due to connection restored...');
+        syncDataSilently();
       }, 2000);
 
       return () => clearTimeout(timer);
     }
-  }, [isOnline, unsyncedCount, isSyncing, syncData]);
+  }, [isOnline, unsyncedCount, isSyncing, syncDataSilently]);
 
   /**
    * Get sync status
@@ -167,7 +194,9 @@ export const useOfflineSync = () => {
     syncError,
 
     // Actions
-    syncData,
+    syncData: syncDataManually, // For backward compatibility
+    syncDataManually,
+    syncDataSilently,
     refreshNetworkStatus,
   };
 };

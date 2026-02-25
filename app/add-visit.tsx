@@ -1,8 +1,8 @@
 /**
  * Add Visit/Schedule Screen
- * 
+ *
  * Form for scheduling new site visits with date/time pickers.
- * Uses Expo-compatible DateTimePicker for native date/time selection.
+ * Uses Material You theming and modal presentation.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -19,16 +19,19 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useScheduleManagement } from '../lib/hooks/useScheduleManagement';
 import { useSiteManagement } from '../lib/hooks/useSiteManagement';
 import { Site } from '../lib/types';
+import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
 
 export default function AddVisitScreen() {
   const { scheduleVisit } = useScheduleManagement();
   const { allSites } = useSiteManagement();
+  const colors = useMaterialYouColors();
 
   // Form state
   const [visitTitle, setVisitTitle] = useState('');
@@ -40,9 +43,6 @@ export default function AddVisitScreen() {
   const [showSitePicker, setShowSitePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /**
-   * Handle date change
-   */
   const handleDateChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
     if (event.type === 'set' && selectedDate) {
@@ -50,9 +50,6 @@ export default function AddVisitScreen() {
     }
   }, []);
 
-  /**
-   * Handle time change
-   */
   const handleTimeChange = useCallback((event: DateTimePickerEvent, selectedTime?: Date) => {
     setShowTimePicker(Platform.OS === 'ios');
     if (event.type === 'set' && selectedTime) {
@@ -60,9 +57,6 @@ export default function AddVisitScreen() {
     }
   }, []);
 
-  /**
-   * Format date to YYYY-MM-DD
-   */
   const formatDate = (date: Date): string => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -70,9 +64,6 @@ export default function AddVisitScreen() {
     return `${year}-${month}-${day}`;
   };
 
-  /**
-   * Format time to 12-hour format (e.g., "09:00 AM")
-   */
   const formatTime = (date: Date): string => {
     let hours = date.getHours();
     const minutes = String(date.getMinutes()).padStart(2, '0');
@@ -81,9 +72,6 @@ export default function AddVisitScreen() {
     return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
   };
 
-  /**
-   * Display formatted date
-   */
   const displayDate = useCallback((date: Date): string => {
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
@@ -93,28 +81,18 @@ export default function AddVisitScreen() {
     });
   }, []);
 
-  /**
-   * Get selected site name
-   */
   const getSelectedSiteName = useCallback((): string => {
     if (!selectedSiteId) return 'Select a site...';
     const site = allSites.find((s) => s.id === selectedSiteId);
     return site?.name || 'Unknown Site';
   }, [selectedSiteId, allSites]);
 
-  /**
-   * Handle site selection
-   */
   const handleSiteSelect = useCallback((siteId: string) => {
     setSelectedSiteId(siteId);
     setShowSitePicker(false);
   }, []);
 
-  /**
-   * Validate form and submit
-   */
   const handleSubmit = useCallback(() => {
-    // Validation
     if (!visitTitle.trim()) {
       Alert.alert('Validation Error', 'Please enter a visit title.');
       return;
@@ -125,7 +103,6 @@ export default function AddVisitScreen() {
       return;
     }
 
-    // Check if date is in the past
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const selectedDate = new Date(visitDate);
@@ -139,11 +116,9 @@ export default function AddVisitScreen() {
     setIsSubmitting(true);
 
     try {
-      // Get site name
       const selectedSite = allSites.find((s) => s.id === selectedSiteId);
       const siteName = selectedSite?.name || 'Unknown Site';
 
-      // Schedule visit
       scheduleVisit(
         {
           siteId: selectedSiteId,
@@ -154,16 +129,12 @@ export default function AddVisitScreen() {
         siteName
       );
 
-      Alert.alert(
-        'Success',
-        `Visit "${visitTitle}" has been scheduled successfully!`,
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
-      );
+      Alert.alert('Success', `Visit "${visitTitle}" has been scheduled successfully!`, [
+        {
+          text: 'OK',
+          onPress: () => router.back(),
+        },
+      ]);
     } catch (error) {
       console.error('Error scheduling visit:', error);
       Alert.alert('Error', 'Failed to schedule visit. Please try again.');
@@ -171,211 +142,233 @@ export default function AddVisitScreen() {
     }
   }, [visitTitle, selectedSiteId, visitDate, visitTime, allSites, scheduleVisit]);
 
-  /**
-   * Render site item in picker
-   */
   const renderSiteItem = ({ item }: { item: Site }) => (
     <TouchableOpacity
-      style={styles.siteItem}
+      style={[styles.siteItem, { borderBottomColor: colors.surfaceContainerLow }]}
       onPress={() => handleSiteSelect(item.id)}
       activeOpacity={0.7}
     >
       <View style={styles.siteItemContent}>
-        <MaterialCommunityIcons name="map-marker" size={24} color="#3B82F6" />
+        <MaterialCommunityIcons name="map-marker" size={24} color={colors.primary} />
         <View style={styles.siteItemText}>
-          <Text style={styles.siteItemName}>{item.name}</Text>
-          <Text style={styles.siteItemCapacity}>{item.capacity}</Text>
+          <Text style={[styles.siteItemName, { color: colors.onSurface }]}>{item.name}</Text>
+          <Text style={[styles.siteItemCapacity, { color: colors.onSurfaceVariant }]}>
+            {item.capacity}
+          </Text>
         </View>
       </View>
       {selectedSiteId === item.id && (
-        <MaterialCommunityIcons name="check-circle" size={24} color="#10B981" />
+        <MaterialCommunityIcons name="check-circle" size={24} color={colors.primary} />
       )}
     </TouchableOpacity>
   );
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={['bottom']}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1F2937" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Schedule Visit</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Form Section */}
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Visit Details</Text>
-
-          {/* Visit Title Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Visit Title *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Quarterly Inspection"
-              value={visitTitle}
-              onChangeText={setVisitTitle}
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-
-          {/* Site Selection */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Site *</Text>
-            <TouchableOpacity
-              style={styles.dateTimeButton}
-              onPress={() => setShowSitePicker(true)}
-            >
-              <MaterialCommunityIcons name="map-marker" size={20} color="#6B7280" />
-              <Text style={[styles.dateTimeText, !selectedSiteId && styles.placeholderText]}>
-                {getSelectedSiteName()}
-              </Text>
-              <MaterialCommunityIcons name="chevron-down" size={20} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Date Selection */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Date *</Text>
-            <TouchableOpacity
-              style={styles.dateTimeButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <MaterialCommunityIcons name="calendar" size={20} color="#6B7280" />
-              <Text style={styles.dateTimeText}>{displayDate(visitDate)}</Text>
-              <MaterialCommunityIcons name="chevron-down" size={20} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Time Selection */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Time *</Text>
-            <TouchableOpacity
-              style={styles.dateTimeButton}
-              onPress={() => setShowTimePicker(true)}
-            >
-              <MaterialCommunityIcons name="clock-outline" size={20} color="#6B7280" />
-              <Text style={styles.dateTimeText}>{formatTime(visitTime)}</Text>
-              <MaterialCommunityIcons name="chevron-down" size={20} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Info Box */}
-        <View style={styles.infoBox}>
-          <MaterialCommunityIcons name="information" size={20} color="#3B82F6" />
-          <Text style={styles.infoText}>
-            This visit will be added to your schedule. You can sync it to your device calendar from
-            the Schedule screen.
-          </Text>
-        </View>
-      </ScrollView>
-
-      {/* Site Picker Modal */}
-      <Modal
-        visible={showSitePicker}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowSitePicker(false)}
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: 'Schedule Visit',
+          headerStyle: { backgroundColor: colors.surface },
+          headerTintColor: colors.onSurface,
+          presentation: 'modal',
+        }}
+      />
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Site</Text>
-              <TouchableOpacity onPress={() => setShowSitePicker(false)}>
-                <MaterialCommunityIcons name="close" size={24} color="#6B7280" />
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <View style={[styles.formSection, { backgroundColor: colors.surfaceContainer }]}>
+            <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Visit Details</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Visit Title *</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    borderColor: colors.outline,
+                    color: colors.onSurface,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                placeholder="e.g., Quarterly Inspection"
+                value={visitTitle}
+                onChangeText={setVisitTitle}
+                placeholderTextColor={colors.onSurfaceVariant}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Site *</Text>
+              <TouchableOpacity
+                style={[
+                  styles.dateTimeButton,
+                  {
+                    borderColor: colors.outline,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                onPress={() => setShowSitePicker(true)}
+              >
+                <MaterialCommunityIcons name="map-marker" size={20} color={colors.primary} />
+                <Text
+                  style={[
+                    styles.dateTimeText,
+                    { color: selectedSiteId ? colors.onSurface : colors.onSurfaceVariant },
+                  ]}
+                >
+                  {getSelectedSiteName()}
+                </Text>
+                <MaterialCommunityIcons name="chevron-down" size={20} color={colors.outline} />
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={allSites}
-              renderItem={renderSiteItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.siteList}
-            />
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Date *</Text>
+              <TouchableOpacity
+                style={[
+                  styles.dateTimeButton,
+                  {
+                    borderColor: colors.outline,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <MaterialCommunityIcons name="calendar" size={20} color={colors.primary} />
+                <Text style={[styles.dateTimeText, { color: colors.onSurface }]}>
+                  {displayDate(visitDate)}
+                </Text>
+                <MaterialCommunityIcons name="chevron-down" size={20} color={colors.outline} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Time *</Text>
+              <TouchableOpacity
+                style={[
+                  styles.dateTimeButton,
+                  {
+                    borderColor: colors.outline,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                onPress={() => setShowTimePicker(true)}
+              >
+                <MaterialCommunityIcons name="clock-outline" size={20} color={colors.primary} />
+                <Text style={[styles.dateTimeText, { color: colors.onSurface }]}>
+                  {formatTime(visitTime)}
+                </Text>
+                <MaterialCommunityIcons name="chevron-down" size={20} color={colors.outline} />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
 
-      {/* Date Picker */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={visitDate}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleDateChange}
-          minimumDate={new Date()}
-        />
-      )}
+          <View style={[styles.infoBox, { backgroundColor: colors.primaryContainer }]}>
+            <MaterialCommunityIcons name="information" size={20} color={colors.primary} />
+            <Text style={[styles.infoText, { color: colors.onPrimaryContainer }]}>
+              This visit will be added to your schedule. You can sync it to your device calendar
+              from the Schedule screen.
+            </Text>
+          </View>
+        </ScrollView>
 
-      {/* Time Picker */}
-      {showTimePicker && (
-        <DateTimePicker
-          value={visitTime}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleTimeChange}
-        />
-      )}
-
-      {/* Submit Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={isSubmitting}
+        <Modal
+          visible={showSitePicker}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowSitePicker(false)}
         >
-          <MaterialCommunityIcons name="calendar-plus" size={24} color="#FFF" />
-          <Text style={styles.submitButtonText}>
-            {isSubmitting ? 'Scheduling...' : 'Schedule Visit'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <View style={[styles.modalHeader, { borderBottomColor: colors.outlineVariant }]}>
+                <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Select Site</Text>
+                <TouchableOpacity onPress={() => setShowSitePicker(false)}>
+                  <MaterialCommunityIcons name="close" size={24} color={colors.outline} />
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={allSites}
+                renderItem={renderSiteItem}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.siteList}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={visitDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+            minimumDate={new Date()}
+          />
+        )}
+
+        {showTimePicker && (
+          <DateTimePicker
+            value={visitTime}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleTimeChange}
+          />
+        )}
+
+        <View
+          style={[
+            styles.footer,
+            { backgroundColor: colors.surface, borderTopColor: colors.outlineVariant },
+          ]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              {
+                backgroundColor: isSubmitting ? colors.surfaceContainerHigh : colors.primary,
+              },
+            ]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            <MaterialCommunityIcons name="calendar-plus" size={24} color={colors.onPrimary} />
+            <Text style={[styles.submitButtonText, { color: colors.onPrimary }]}>
+              {isSubmitting ? 'Scheduling...' : 'Schedule Visit'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
+  keyboardView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
   },
   formSection: {
-    padding: 16,
-    backgroundColor: '#FFF',
-    marginBottom: 8,
+    padding: 20,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 16,
+    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 16,
+    fontSize: 18,
+    fontWeight: '500',
+    marginBottom: 20,
   },
   inputGroup: {
     marginBottom: 20,
@@ -383,52 +376,40 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#374151',
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 16,
-    color: '#1F2937',
-    backgroundColor: '#FFF',
   },
   dateTimeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: '#FFF',
-    gap: 8,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
   },
   dateTimeText: {
     flex: 1,
     fontSize: 16,
-    color: '#1F2937',
-  },
-  placeholderText: {
-    color: '#9CA3AF',
   },
   infoBox: {
     flexDirection: 'row',
     marginHorizontal: 16,
     marginBottom: 16,
-    padding: 12,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 8,
-    gap: 8,
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
   },
   infoText: {
     flex: 1,
-    fontSize: 12,
-    color: '#1E40AF',
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
@@ -436,9 +417,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     maxHeight: '70%',
   },
   modalHeader: {
@@ -447,12 +427,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontSize: 20,
+    fontWeight: '500',
   },
   siteList: {
     paddingVertical: 8,
@@ -464,7 +442,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
   siteItemContent: {
     flexDirection: 'row',
@@ -478,34 +455,25 @@ const styles = StyleSheet.create({
   siteItemName: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1F2937',
     marginBottom: 2,
   },
   siteItemCapacity: {
     fontSize: 14,
-    color: '#6B7280',
   },
   footer: {
     padding: 16,
-    backgroundColor: '#FFF',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
   },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3B82F6',
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    borderRadius: 16,
     gap: 8,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#9CA3AF',
   },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFF',
   },
 });

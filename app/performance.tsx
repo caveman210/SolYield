@@ -30,6 +30,7 @@ import {
 import { formatDate } from '../lib/utils/dateFormatter';
 import { M3Motion } from '../lib/design';
 import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
+import { PDF_COLORS } from '../lib/design/staticColors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -41,32 +42,97 @@ export default function PerformanceScreen() {
   const colors = useMaterialYouColors();
   const siteId = params.siteId as string | undefined;
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
 
   const site = siteId ? SITES.find((s) => s.id === siteId) : SITES[0];
 
-  const dailyData = flattenChartData(CHART_DATA);
+  // Group data by month for navigation
+  const monthlyGroups = CHART_DATA.map((monthData) => {
+    const flattened = monthData.days;
+    const firstDate = new Date(flattened[0].date);
+    const monthName = firstDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return {
+      monthName,
+      data: flattened,
+    };
+  });
+
+  const currentMonth = monthlyGroups[currentMonthIndex] || monthlyGroups[0];
+  const dailyData = currentMonth.data;
+
   const avgGeneration = calculateAverage(dailyData);
   const peakGeneration = calculatePeak(dailyData);
   const totalGeneration = calculateTotal(dailyData);
 
-  const barData = dailyData.map((day) => ({
-    value: day.energyGeneratedkWh,
-    label: formatDate(day.date, 'short').split(' ')[0],
-    frontColor: colors.primary,
-  }));
+  // Month navigation handlers
+  const goToPreviousMonth = () => {
+    if (currentMonthIndex > 0) {
+      setCurrentMonthIndex(currentMonthIndex - 1);
+    }
+  };
 
+  const goToNextMonth = () => {
+    if (currentMonthIndex < monthlyGroups.length - 1) {
+      setCurrentMonthIndex(currentMonthIndex + 1);
+    }
+  };
+
+  // Pastel green-yellow-red gradient based on performance
+  const getBarColor = (value: number) => {
+    const maxExpected = 60; // Expected max generation
+    const ratio = value / maxExpected;
+
+    if (ratio >= 0.8) return '#66BB6A'; // Pastel green (good)
+    if (ratio >= 0.5) return '#FFA726'; // Pastel yellow/orange (medium)
+    return '#EF5350'; // Pastel red (low/danger)
+  };
+
+  // Better chart labels showing day number
+  const barData = dailyData.map((day, index) => {
+    const date = new Date(day.date);
+    const dayNum = date.getDate();
+
+    return {
+      value: day.energyGeneratedkWh,
+      label: String(dayNum),
+      frontColor: getBarColor(day.energyGeneratedkWh),
+    };
+  });
+
+  // Pie chart with pastel Material You colors
   const pieData = [
-    { value: PERFORMANCE_DATA.overPerformingDays, color: colors.primary, label: 'Over' },
-    { value: PERFORMANCE_DATA.normalDays, color: colors.secondary, label: 'Normal' },
-    { value: PERFORMANCE_DATA.underPerformingDays, color: colors.tertiary, label: 'Under' },
-    { value: PERFORMANCE_DATA.daysNoData, color: colors.outline, label: 'No Data' },
-    { value: PERFORMANCE_DATA.zeroEnergyDays, color: colors.error, label: 'Zero' },
+    {
+      value: PERFORMANCE_DATA.overPerformingDays,
+      color: '#66BB6A', // Pastel green
+      label: 'Over',
+    },
+    {
+      value: PERFORMANCE_DATA.normalDays,
+      color: '#42A5F5', // Pastel blue
+      label: 'Normal',
+    },
+    {
+      value: PERFORMANCE_DATA.underPerformingDays,
+      color: '#FFA726', // Pastel orange
+      label: 'Under',
+    },
+    {
+      value: PERFORMANCE_DATA.daysNoData,
+      color: '#9E9E9E', // Pastel grey
+      label: 'No Data',
+    },
+    {
+      value: PERFORMANCE_DATA.zeroEnergyDays,
+      color: '#EF5350', // Pastel red
+      label: 'Zero',
+    },
   ].filter((item) => item.value > 0);
 
   const generatePDF = async () => {
     setGeneratingPDF(true);
 
     try {
+      // Use static PDF colors for accessibility and easy viewing
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -78,29 +144,30 @@ export default function PerformanceScreen() {
               body {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                 padding: 40px;
-                color: #171D1A;
-                background: #F5FBF5;
+                color: ${PDF_COLORS.section.text};
+                background: white;
               }
               .header {
-                border-bottom: 4px solid ${colors.primary};
+                border-bottom: 4px solid ${PDF_COLORS.header.background};
                 padding-bottom: 20px;
                 margin-bottom: 30px;
               }
               .header h1 {
-                color: ${colors.primary};
+                color: ${PDF_COLORS.header.background};
                 font-size: 28px;
                 margin-bottom: 8px;
               }
               .header .subtitle {
-                color: ${colors.onSurfaceVariant};
+                color: ${PDF_COLORS.section.text};
+                opacity: 0.7;
                 font-size: 16px;
               }
               .section { margin-bottom: 30px; }
               .section h2 {
-                color: ${colors.onSurface};
+                color: ${PDF_COLORS.section.text};
                 font-size: 20px;
                 margin-bottom: 16px;
-                border-left: 4px solid ${colors.primary};
+                border-left: 4px solid ${PDF_COLORS.chart.primary};
                 padding-left: 12px;
               }
               .stats-grid {
@@ -110,24 +177,26 @@ export default function PerformanceScreen() {
                 margin-bottom: 30px;
               }
               .stat-card {
-                background: ${colors.surfaceContainer};
+                background: ${PDF_COLORS.section.background};
                 padding: 20px;
                 border-radius: 12px;
-                border-left: 4px solid ${colors.primary};
+                border-left: 4px solid ${PDF_COLORS.chart.primary};
               }
               .stat-card .label {
-                color: ${colors.onSurfaceVariant};
+                color: ${PDF_COLORS.section.text};
+                opacity: 0.7;
                 font-size: 12px;
                 text-transform: uppercase;
                 margin-bottom: 8px;
               }
               .stat-card .value {
-                color: ${colors.onSurface};
+                color: ${PDF_COLORS.section.text};
                 font-size: 24px;
                 font-weight: bold;
               }
               .stat-card .unit {
-                color: ${colors.outline};
+                color: ${PDF_COLORS.section.text};
+                opacity: 0.6;
                 font-size: 14px;
               }
               table {
@@ -138,11 +207,11 @@ export default function PerformanceScreen() {
               th, td {
                 padding: 12px;
                 text-align: left;
-                border-bottom: 1px solid ${colors.outlineVariant};
+                border-bottom: 1px solid ${PDF_COLORS.section.border};
               }
               th {
-                background: ${colors.primary};
-                color: ${colors.onPrimary};
+                background: ${PDF_COLORS.header.background};
+                color: ${PDF_COLORS.header.text};
                 font-weight: 600;
               }
               tr:nth-child(even) { background: ${colors.surfaceContainerLow}; }
@@ -332,6 +401,29 @@ export default function PerformanceScreen() {
             },
           ]}
         >
+          {/* Month Navigation Header */}
+          <View style={styles.monthNavigationContainer}>
+            <TouchableOpacity
+              onPress={goToPreviousMonth}
+              disabled={currentMonthIndex === 0}
+              style={[styles.monthNavButton, { opacity: currentMonthIndex === 0 ? 0.3 : 1 }]}
+            >
+              <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
+            </TouchableOpacity>
+            <Text style={[styles.monthTitle, { color: colors.onSurface }]}>
+              {currentMonth.monthName}
+            </Text>
+            <TouchableOpacity
+              onPress={goToNextMonth}
+              disabled={currentMonthIndex === monthlyGroups.length - 1}
+              style={[
+                styles.monthNavButton,
+                { opacity: currentMonthIndex === monthlyGroups.length - 1 ? 0.3 : 1 },
+              ]}
+            >
+              <Ionicons name="chevron-forward" size={24} color={colors.onSurface} />
+            </TouchableOpacity>
+          </View>
           <Text style={[styles.chartTitle, { color: colors.onSurface }]}>
             Daily Energy Generation
           </Text>
@@ -665,5 +757,21 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 32,
+  },
+  monthNavigationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  monthNavButton: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontWeight: '500',
+    textAlign: 'center',
+    flex: 1,
   },
 });

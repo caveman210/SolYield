@@ -1,6 +1,6 @@
 /**
  * useSchedule Hook
- * 
+ *
  * Provides visit scheduling operations and queries.
  * Separates business logic from UI components.
  */
@@ -8,9 +8,17 @@
 import { useCallback, useMemo } from 'react';
 import * as Calendar from 'expo-calendar';
 import { Platform, Alert } from 'react-native';
-import { schedule as staticSchedule } from '../data/schedule';
-import { Visit } from '../types';
+import { SCHEDULE as staticSchedule } from '../data/schedule';
+import { ScheduleVisit } from '../types';
 import { useSites } from './useSites';
+
+interface Visit extends ScheduleVisit {
+  siteName?: string;
+  location?: {
+    lat: number;
+    lng: number;
+  };
+}
 
 /**
  * Hook for managing visit schedule
@@ -20,13 +28,13 @@ export const useSchedule = () => {
 
   // Convert static schedule to typed array with site names
   const visits = useMemo(() => {
-    return staticSchedule.map((visit) => {
+    return staticSchedule.map((visit: ScheduleVisit): Visit => {
       const site = getSiteById(visit.siteId);
       return {
         ...visit,
         siteName: site?.name || 'Unknown Site',
         location: site?.location,
-      } as Visit;
+      };
     });
   }, [getSiteById]);
 
@@ -83,9 +91,7 @@ export const useSchedule = () => {
    */
   const getVisitsInRange = useCallback(
     (startDate: string, endDate: string): Visit[] => {
-      return visits.filter(
-        (visit) => visit.date >= startDate && visit.date <= endDate
-      );
+      return visits.filter((visit) => visit.date >= startDate && visit.date <= endDate);
     },
     [visits]
   );
@@ -94,13 +100,16 @@ export const useSchedule = () => {
    * Group visits by date
    */
   const getVisitsGroupedByDate = useCallback((): Record<string, Visit[]> => {
-    return visits.reduce((grouped, visit) => {
-      if (!grouped[visit.date]) {
-        grouped[visit.date] = [];
-      }
-      grouped[visit.date].push(visit);
-      return grouped;
-    }, {} as Record<string, Visit[]>);
+    return visits.reduce(
+      (grouped, visit) => {
+        if (!grouped[visit.date]) {
+          grouped[visit.date] = [];
+        }
+        grouped[visit.date].push(visit);
+        return grouped;
+      },
+      {} as Record<string, Visit[]>
+    );
   }, [visits]);
 
   /**
@@ -149,10 +158,7 @@ export const useCalendarSync = () => {
     try {
       const { status } = await Calendar.requestCalendarPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Calendar access is needed to sync your visits.'
-        );
+        Alert.alert('Permission Required', 'Calendar access is needed to sync your visits.');
         return false;
       }
       return true;
@@ -169,7 +175,7 @@ export const useCalendarSync = () => {
   const getAppCalendar = useCallback(async (): Promise<string | null> => {
     try {
       const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      
+
       // Look for existing SolYield calendar
       const appCalendar = calendars.find((cal) => cal.title === 'SolYield Visits');
       if (appCalendar) {
@@ -221,7 +227,7 @@ export const useCalendarSync = () => {
         // Parse date and time
         const [year, month, day] = visit.date.split('-').map(Number);
         const timeMatch = visit.time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-        
+
         if (!timeMatch) {
           Alert.alert('Error', 'Invalid time format.');
           return false;

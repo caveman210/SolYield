@@ -55,24 +55,72 @@ export default function SiteDetailScreen() {
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      setUserLocation(location);
-      setLoading(false);
-
-      if (site) {
-        const dist = calculateDistance(
-          location.coords.latitude,
-          location.coords.longitude,
-          site.location.lat,
-          site.location.lng
-        );
-        setDistance(dist);
+      // Check if location services are enabled
+      const isEnabled = await Location.hasServicesEnabledAsync();
+      if (!isEnabled) {
+        setLocationError('Location services are disabled. Please enable them in device settings.');
+        setLoading(false);
+        return;
       }
-    } catch (error) {
+
+      // Try multiple accuracy levels for better compatibility
+      let location = null;
+      const accuracyLevels = [
+        Location.Accuracy.BestForNavigation,
+        Location.Accuracy.High,
+        Location.Accuracy.Balanced,
+        Location.Accuracy.Low,
+      ];
+
+      for (const accuracy of accuracyLevels) {
+        try {
+          location = await Location.getCurrentPositionAsync({ accuracy });
+          break;
+        } catch (err) {
+          console.log(`Failed with accuracy ${accuracy}`);
+        }
+      }
+
+      if (!location) {
+        // Last resort
+        try {
+          location = await Location.getLastKnownPositionAsync({
+            maxAge: 300000,
+            requiredAccuracy: 1000,
+          });
+        } catch (err) {
+          console.log('Failed to get last known position');
+        }
+      }
+
+      if (location) {
+        setUserLocation(location);
+
+        if (site) {
+          const dist = calculateDistance(
+            location.coords.latitude,
+            location.coords.longitude,
+            site.location.lat,
+            site.location.lng
+          );
+          setDistance(dist);
+        }
+      } else {
+        setLocationError('Unable to get location. You can still view site info without location.');
+      }
+
+      setLoading(false);
+    } catch (error: any) {
       console.error('Error getting location:', error);
-      setLocationError('Failed to get your location');
+
+      let errorMessage = 'Unable to get location. You can still view site info.';
+      if (error?.message?.includes('settings') || error?.message?.includes('disabled')) {
+        errorMessage = 'Location services are disabled. You can still view site info.';
+      } else if (error?.message?.includes('permission')) {
+        errorMessage = 'Location permission denied. You can still view site info.';
+      }
+
+      setLocationError(errorMessage);
       setLoading(false);
     }
   };
@@ -137,25 +185,40 @@ export default function SiteDetailScreen() {
   const handleNavigate = () => {
     if (!site) return;
 
-    const label = encodeURIComponent(site.name);
-    const url =
-      Platform.OS === 'ios'
-        ? `maps://app?daddr=${site.location.lat},${site.location.lng}`
-        : `geo:0,0?q=${site.location.lat},${site.location.lng}(${label})`;
+    Alert.alert('Navigate to Site', 'Choose navigation option:', [
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'In-App Navigation',
+        onPress: () => router.push(`/map-navigation?siteId=${site.id}` as any),
+      },
+      {
+        text: 'External Maps',
+        onPress: () => {
+          const label = encodeURIComponent(site.name);
+          const url =
+            Platform.OS === 'ios'
+              ? `maps://app?daddr=${site.location.lat},${site.location.lng}`
+              : `geo:0,0?q=${site.location.lat},${site.location.lng}(${label})`;
 
-    Linking.canOpenURL(url)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(url);
-        } else {
-          const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${site.location.lat},${site.location.lng}`;
-          Linking.openURL(webUrl);
-        }
-      })
-      .catch((err) => {
-        console.error('Navigation error:', err);
-        Alert.alert('Error', 'Unable to open maps application');
-      });
+          Linking.canOpenURL(url)
+            .then((supported) => {
+              if (supported) {
+                Linking.openURL(url);
+              } else {
+                const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${site.location.lat},${site.location.lng}`;
+                Linking.openURL(webUrl);
+              }
+            })
+            .catch((err) => {
+              console.error('Navigation error:', err);
+              Alert.alert('Error', 'Unable to open maps application');
+            });
+        },
+      },
+    ]);
   };
 
   if (!site) {

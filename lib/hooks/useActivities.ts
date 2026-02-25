@@ -1,6 +1,6 @@
 /**
  * useActivities Hook
- * 
+ *
  * Provides activity feed management operations.
  * Separates business logic from UI components.
  */
@@ -102,9 +102,10 @@ export const useActivities = () => {
       synced: activities.length - unsyncedActivities.length,
       byType: {
         inspection: activities.filter((a) => a.type === 'inspection').length,
-        checkin: activities.filter((a) => a.type === 'checkin').length,
+        checkIn: activities.filter((a) => a.type === 'check-in').length,
         report: activities.filter((a) => a.type === 'report').length,
-        alert: activities.filter((a) => a.type === 'alert').length,
+        schedule: activities.filter((a) => a.type === 'schedule').length,
+        maintenance: activities.filter((a) => a.type === 'maintenance').length,
       },
     };
   }, [activities, unsyncedActivities]);

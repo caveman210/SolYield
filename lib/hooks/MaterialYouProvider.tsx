@@ -1,4 +1,12 @@
-import React, { createContext, useContext, ReactNode, useEffect, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+} from 'react';
 import { Animated } from 'react-native';
 import { useMaterialYou, MaterialYouColors } from './useMaterialYou';
 
@@ -18,6 +26,10 @@ export function MaterialYouProvider({ children }: { children: ReactNode }) {
     createAnimatedColors(transitionProgress, colors, colors)
   );
 
+  // CRITICAL: Store the colors object reference in a ref to ensure stability
+  // Only update it when color VALUES actually change
+  const stableColorsRef = useRef<MaterialYouColors>(colors);
+
   useEffect(() => {
     // Check if colors actually changed
     const hasChanged = Object.keys(colors).some(
@@ -27,6 +39,11 @@ export function MaterialYouProvider({ children }: { children: ReactNode }) {
     );
 
     if (hasChanged) {
+      console.log('🎨 Material You colors changed, updating...');
+
+      // Update the stable ref with new colors
+      stableColorsRef.current = colors;
+
       // Reset animation progress to 0
       transitionProgress.setValue(0);
 
@@ -50,11 +67,18 @@ export function MaterialYouProvider({ children }: { children: ReactNode }) {
     }
   }, [colors, transitionProgress]);
 
-  return (
-    <MaterialYouContext.Provider value={{ colors, animatedColors, transitionProgress }}>
-      {children}
-    </MaterialYouContext.Provider>
+  // CRITICAL: Memoize the context value to prevent re-renders
+  // The colors ref ensures the same object reference unless colors actually change
+  const contextValue = useMemo(
+    () => ({
+      colors: stableColorsRef.current,
+      animatedColors,
+      transitionProgress,
+    }),
+    [animatedColors, transitionProgress]
   );
+
+  return <MaterialYouContext.Provider value={contextValue}>{children}</MaterialYouContext.Provider>;
 }
 
 /**

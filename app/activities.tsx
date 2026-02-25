@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity, Animated as RNAnimated } from 'react-native';
+import {
+  View,
+  FlatList,
+  StyleSheet,
+  TouchableOpacity,
+  Animated as RNAnimated,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,6 +16,7 @@ import {
   useAnimatedMaterialYouColors,
 } from '../lib/hooks/MaterialYouProvider';
 import { useActivitiesByType, useActivityActions } from '../lib/hooks/useActivityManager';
+import { useOfflineSync, formatLastSyncTime } from '../lib/hooks/useOfflineSync';
 import { M3Typography, M3Spacing, M3Shape } from '../lib/design/tokens';
 import { Activity, ActivityType } from '../lib/types';
 import { getActivityIcon } from '../lib/utils/activityUtils';
@@ -28,6 +37,7 @@ export default function ActivitiesScreen() {
   const [filterType, setFilterType] = useState<ActivityType | 'all'>('all');
   const { activities: filteredActivities, isLoading } = useActivitiesByType(filterType);
   const { createActivity } = useActivityActions();
+  const { syncDataManually, isSyncing, unsyncedCount, lastSyncTime, isOnline } = useOfflineSync();
 
   // Sample data for demo - in production, this would be loaded from the backend
   useEffect(() => {
@@ -85,6 +95,15 @@ export default function ActivitiesScreen() {
     if (activity.siteId) {
       router.push(`/site/${activity.siteId}` as any);
     }
+  };
+
+  const handleSyncPress = async () => {
+    if (!isOnline || unsyncedCount === 0 || isSyncing) {
+      return;
+    }
+
+    // Trigger sync silently - status shown in banner only
+    await syncDataManually();
   };
 
   const renderFilterChip = (type: ActivityType | 'all', label: string, icon: string) => (
@@ -181,8 +200,53 @@ export default function ActivitiesScreen() {
         >
           Recent Activities
         </StyledText>
-        <View style={{ width: 48 }} />
+        <TouchableOpacity
+          style={[styles.syncButton, { backgroundColor: colors.primaryContainer }]}
+          onPress={handleSyncPress}
+          activeOpacity={0.7}
+          disabled={isSyncing}
+        >
+          {isSyncing ? (
+            <ActivityIndicator size="small" color={colors.onPrimaryContainer} />
+          ) : (
+            <MaterialCommunityIcons
+              name={isOnline ? 'cloud-sync' : 'cloud-off-outline'}
+              size={24}
+              color={colors.onPrimaryContainer}
+            />
+          )}
+        </TouchableOpacity>
       </View>
+
+      {/* Sync Status Banner */}
+      {(unsyncedCount > 0 || lastSyncTime) && (
+        <View
+          style={[
+            styles.syncBanner,
+            {
+              backgroundColor:
+                unsyncedCount > 0 ? colors.errorContainer : colors.surfaceContainerHigh,
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name={unsyncedCount > 0 ? 'cloud-upload' : 'cloud-check'}
+            size={16}
+            color={unsyncedCount > 0 ? colors.onErrorContainer : colors.onSurfaceVariant}
+          />
+          <StyledText
+            style={{
+              ...M3Typography.body.small,
+              color: unsyncedCount > 0 ? colors.onErrorContainer : colors.onSurfaceVariant,
+              marginLeft: M3Spacing.xs,
+            }}
+          >
+            {unsyncedCount > 0
+              ? `${unsyncedCount} item${unsyncedCount > 1 ? 's' : ''} pending sync`
+              : `Last synced ${formatLastSyncTime(lastSyncTime)}`}
+          </StyledText>
+        </View>
+      )}
 
       {/* Filter Chips */}
       <View style={styles.filterContainer}>
@@ -231,6 +295,22 @@ const styles = StyleSheet.create({
     borderRadius: M3Shape.full,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  syncButton: {
+    width: 48,
+    height: 48,
+    borderRadius: M3Shape.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: M3Spacing.lg,
+    paddingVertical: M3Spacing.sm,
+    marginHorizontal: M3Spacing.lg,
+    marginBottom: M3Spacing.sm,
+    borderRadius: M3Shape.small,
   },
   filterContainer: {
     flexDirection: 'row',
