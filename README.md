@@ -214,65 +214,19 @@ npm run format
 
 ## Screenshots
 
-### Dashboard
+|                   Dashboard                    |                   Calendar                   |                 Sites                  |                    Performance                     |                    Inspection                    |
+| :--------------------------------------------: | :------------------------------------------: | :------------------------------------: | :------------------------------------------------: | :----------------------------------------------: |
+| ![Dashboard](media/screenshots/Dashboard.jpeg) | ![Calendar](media/screenshots/Calendar.jpeg) | ![Sites](media/screenshots/Sites.jpeg) | ![Performance](media/screenshots/Performance.jpeg) | ![Inspection](media/screenshots/Inspection.jpeg) |
 
-![Dashboard](media/screenshots/Dashboard.jpeg)
-
-- Material You themed home screen (ever so slightly buggy with coloring)
-- Quick stats overview
-- Recent activity feed
-- Offline/Online status indicator
-
-### My Visits (Schedule)
-
-![Calendar](media/screenshots/Calendar.jpeg)
-
-- Scheduled maintenance visits list
-- Date badges (Today/Tomorrow/Date)
-- Quick action buttons (Inspection, Navigate)
-- Calendar sync button
-
-### Solar Sites Map
-
-![Sites](media/screenshots/Sites.jpeg)
-
-- Interactive map with solar site markers
-- Site list view with capacity info
-- Navigation to individual sites
-
-### GPS Navigation
-
-- Real-time location tracking
-- Distance and ETA display
-- External navigation deep-links
-- Site details bottom sheet
-
-### Performance Analytics
-
-![Performance](media/screenshots/Performance.jpeg)
-
-- Bar chart: Daily energy generation
-- Pie chart: Performance breakdown
-- Stats: Average, Peak, Total kWh
-- PDF export functionality
-
-### Offline Inspection Form
-
-![Inspection](media/screenshots/Inspection.jpeg)
-
-- Dynamic form rendering from schema
-- Site selection
-- Multiple field types support
-- Camera capture for site photos
-- Offline status banner
-- Sync status tracking
-
-### Inspection History
-
-- List of submitted inspections
-- Sync status badges (Synced/Pending)
-- Form detail view
-- Image gallery support
+| Feature                | Description                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Dashboard**          | Material You themed home screen, Quick stats overview, Recent activity feed, Offline/Online status indicator                   |
+| **Calendar**           | Scheduled maintenance visits list, Date badges, Quick action buttons, Calendar sync                                            |
+| **Sites**              | Interactive map with solar site markers, Site list view, Navigation to individual sites                                        |
+| **GPS Navigation**     | Real-time location tracking, Distance and ETA display, External navigation deep-links                                          |
+| **Performance**        | Bar chart: Daily energy generation, Pie chart: Performance breakdown, Stats: Average/Peak/Total kWh, PDF export                |
+| **Inspection**         | Dynamic form rendering from schema, Site selection, Multiple field types, Camera capture, Offline status banner, Sync tracking |
+| **Inspection History** | List of submitted inspections, Sync status badges (Synced/Pending), Form detail view, Image gallery support                    |
 
 ---
 
