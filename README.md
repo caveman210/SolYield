@@ -276,22 +276,6 @@ npm run format
 
 ---
 
-## Video Walkthrough
-
-### Level 1: Connected Technician Flow
-
-> Demonstrates: Calendar → Site Visit → Check-in (Success/Fail based on location)
-
-[Watch Level 1 Video](https://example.com/level1-demo)
-
-### Level 2: Offline Warrior Flow
-
-> Demonstrates: Airplane Mode → Offline Form → Sync when online
-
-[Watch Level 2 Video](https://example.com/level2-demo)
-
----
-
 ## Key Technical Highlights
 
 ### Performance Optimizations
