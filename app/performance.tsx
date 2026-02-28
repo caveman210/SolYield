@@ -1,129 +1,161 @@
-import React, { useState } from 'react';
+/**
+ * Performance Analytics Screen
+ * 
+ * M3Expressive themed performance dashboard with:
+ * - Site dropdown selector (All Sites aggregate + individual sites)
+ * - Aggregated data visualization for all sites combined
+ * - Material You dynamic colors throughout
+ * - PDF export with comprehensive reports
+ */
+
+import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
-  Alert,
   ActivityIndicator,
-  StyleSheet,
+  Animated as RNAnimated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
+import Animated, { FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { BarChart, PieChart } from 'react-native-gifted-charts';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SITES } from '../lib/data/sites';
-import { CHART_DATA } from '../lib/data/chartData';
+import StyledText from './components/StyledText';
+import M3AlertDialog from './components/M3AlertDialog';
+import M3SiteSelectorModal from './components/M3SiteSelectorModal';
+import { useMaterialYouColors, useAnimatedMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
+import { M3Typography, M3Shape, M3Elevation, M3Spacing, M3Motion } from '../lib/design/tokens';
+import { useSites } from '../lib/hooks/useSites';
+import { usePerformanceData } from '../lib/hooks/usePerformanceData';
 import { PERFORMANCE_DATA } from '../lib/data/performanceData';
 import {
-  flattenChartData,
   calculateAverage,
   calculatePeak,
   calculateTotal,
 } from '../lib/utils/chartHelpers';
 import { formatDate } from '../lib/utils/dateFormatter';
-import { M3Motion } from '../lib/design';
-import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
 import { PDF_COLORS } from '../lib/design/staticColors';
+import { Site } from '../lib/types';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
-const AnimatedView = Animated.createAnimatedComponent(View);
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 export default function PerformanceScreen() {
-  const params = useLocalSearchParams();
   const colors = useMaterialYouColors();
-  const siteId = params.siteId as string | undefined;
+  const animatedColors = useAnimatedMaterialYouColors();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { sites, isLoading: sitesLoading } = useSites();
+  const {
+    monthlyGroups,
+    isLoading: performanceLoading,
+    getStatsForMonth,
+    getChartDataForMonth,
+  } = usePerformanceData();
+
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [showSiteSelector, setShowSiteSelector] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
-
-  const site = siteId ? SITES.find((s) => s.id === siteId) : SITES[0];
-
-  // Group data by month for navigation
-  const monthlyGroups = CHART_DATA.map((monthData) => {
-    const flattened = monthData.days;
-    const firstDate = new Date(flattened[0].date);
-    const monthName = firstDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    return {
-      monthName,
-      data: flattened,
-    };
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'info';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
   });
 
-  const currentMonth = monthlyGroups[currentMonthIndex] || monthlyGroups[0];
-  const dailyData = currentMonth.data;
+  // Convert WatermelonDB sites to legacy Site format
+  const allSites: Site[] = useMemo(
+    () =>
+      sites.map((s) => ({
+        id: s.id,
+        name: s.name,
+        location: { lat: s.latitude, lng: s.longitude },
+        capacity: s.capacity,
+        createdAt: s.createdAt.getTime(),
+      })),
+    [sites]
+  );
 
-  const avgGeneration = calculateAverage(dailyData);
-  const peakGeneration = calculatePeak(dailyData);
-  const totalGeneration = calculateTotal(dailyData);
+  // Get selected site or null for "All Sites"
+  const selectedSite = selectedSiteId ? allSites.find((s) => s.id === selectedSiteId) : null;
+  const displayName = selectedSite ? selectedSite.name : 'All Sites Combined';
+  const displayCapacity = selectedSite ? selectedSite.capacity : `${allSites.length} Sites`;
 
-  // Month navigation handlers
+  // Get current month data
+  const currentMonth = monthlyGroups[currentMonthIndex];
+  const dailyData = currentMonth ? getChartDataForMonth(currentMonthIndex, selectedSiteId) : [];
+  const stats = currentMonth ? getStatsForMonth(currentMonthIndex, selectedSiteId) : {
+    avgGeneration: 0,
+    peakPower: 0,
+    totalEnergy: 0,
+    efficiency: 0,
+  };
+
+  // Month navigation
   const goToPreviousMonth = () => {
-    if (currentMonthIndex > 0) {
-      setCurrentMonthIndex(currentMonthIndex - 1);
-    }
+    if (currentMonthIndex > 0) setCurrentMonthIndex(currentMonthIndex - 1);
   };
 
   const goToNextMonth = () => {
-    if (currentMonthIndex < monthlyGroups.length - 1) {
-      setCurrentMonthIndex(currentMonthIndex + 1);
-    }
+    if (currentMonthIndex < monthlyGroups.length - 1) setCurrentMonthIndex(currentMonthIndex + 1);
   };
 
-  // Pastel green-yellow-red gradient based on performance
-  const getBarColor = (value: number) => {
-    const maxExpected = 60; // Expected max generation
-    const ratio = value / maxExpected;
-
-    if (ratio >= 0.8) return '#66BB6A'; // Pastel green (good)
-    if (ratio >= 0.5) return '#FFA726'; // Pastel yellow/orange (medium)
-    return '#EF5350'; // Pastel red (low/danger)
-  };
-
-  // Better chart labels showing day number
-  const barData = dailyData.map((day, index) => {
+  // Bar chart data with Material You themed colors
+  const barData = dailyData.map((day) => {
     const date = new Date(day.date);
     const dayNum = date.getDate();
+    const value = day.value; // Already contains the aggregated value
+
+    // Dynamic color based on performance
+    const maxExpected = 60;
+    const ratio = value / maxExpected;
+    let color = colors.tertiary; // Default
+    if (ratio >= 0.8) color = colors.primary; // High performance
+    else if (ratio >= 0.5) color = colors.secondary; // Medium performance
+    else color = colors.error; // Low performance
 
     return {
-      value: day.energyGeneratedkWh,
+      value,
       label: String(dayNum),
-      frontColor: getBarColor(day.energyGeneratedkWh),
+      frontColor: color,
     };
   });
 
-  // Pie chart with pastel Material You colors
+  // Calculate chart dimensions
+  const barWidth = 32;
+  const spacing = 16;
+  const chartPadding = 60; // Left padding for Y-axis labels
+  const chartWidth = barData.length * (barWidth + spacing) + chartPadding;
+
+  // Pie chart data with Material You colors
   const pieData = [
     {
       value: PERFORMANCE_DATA.overPerformingDays,
-      color: '#66BB6A', // Pastel green
+      color: colors.primary,
       label: 'Over',
     },
     {
       value: PERFORMANCE_DATA.normalDays,
-      color: '#42A5F5', // Pastel blue
+      color: colors.secondary,
       label: 'Normal',
     },
     {
       value: PERFORMANCE_DATA.underPerformingDays,
-      color: '#FFA726', // Pastel orange
+      color: colors.tertiary,
       label: 'Under',
     },
     {
-      value: PERFORMANCE_DATA.daysNoData,
-      color: '#9E9E9E', // Pastel grey
-      label: 'No Data',
-    },
-    {
       value: PERFORMANCE_DATA.zeroEnergyDays,
-      color: '#EF5350', // Pastel red
+      color: colors.error,
       label: 'Zero',
     },
   ].filter((item) => item.value > 0);
@@ -132,7 +164,6 @@ export default function PerformanceScreen() {
     setGeneratingPDF(true);
 
     try {
-      // Use static PDF colors for accessibility and easy viewing
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -199,47 +230,21 @@ export default function PerformanceScreen() {
                 opacity: 0.6;
                 font-size: 14px;
               }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 20px;
-              }
-              th, td {
-                padding: 12px;
-                text-align: left;
-                border-bottom: 1px solid ${PDF_COLORS.section.border};
-              }
-              th {
-                background: ${PDF_COLORS.header.background};
-                color: ${PDF_COLORS.header.text};
-                font-weight: 600;
-              }
-              tr:nth-child(even) { background: ${colors.surfaceContainerLow}; }
-              .performance-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 12px;
-              }
-              .perf-item {
-                background: ${colors.surfaceContainer};
-                padding: 12px;
-                border-radius: 8px;
-              }
               .footer {
                 margin-top: 40px;
                 padding-top: 20px;
-                border-top: 2px solid ${colors.outlineVariant};
+                border-top: 2px solid #E0E0E0;
                 text-align: center;
-                color: ${colors.outline};
+                color: #757575;
                 font-size: 12px;
               }
             </style>
           </head>
           <body>
             <div class="header">
-              <h1>${site?.name || 'All Sites'} - Performance Report</h1>
+              <h1>${displayName} - Performance Report</h1>
               <p class="subtitle">Generated on ${new Date().toLocaleDateString()}</p>
-              <p class="subtitle">Capacity: ${site?.capacity || 'N/A'}</p>
+              <p class="subtitle">Capacity: ${displayCapacity}</p>
             </div>
 
             <div class="section">
@@ -247,54 +252,20 @@ export default function PerformanceScreen() {
               <div class="stats-grid">
                 <div class="stat-card">
                   <div class="label">Average Generation</div>
-                  <div class="value">${avgGeneration.toFixed(1)}</div>
+                  <div class="value">${stats.avgGeneration.toFixed(1)}</div>
                   <div class="unit">kWh/day</div>
                 </div>
                 <div class="stat-card">
                   <div class="label">Peak Generation</div>
-                  <div class="value">${peakGeneration.toFixed(1)}</div>
+                  <div class="value">${stats.peakPower.toFixed(1)}</div>
                   <div class="unit">kWh</div>
                 </div>
                 <div class="stat-card">
                   <div class="label">Total Energy</div>
-                  <div class="value">${totalGeneration.toFixed(1)}</div>
+                  <div class="value">${stats.totalEnergy.toFixed(1)}</div>
                   <div class="unit">kWh</div>
                 </div>
               </div>
-            </div>
-
-            <div class="section">
-              <h2>Day Classification</h2>
-              <div class="performance-grid">
-                <div class="perf-item">Over-Performing: ${PERFORMANCE_DATA.overPerformingDays} days</div>
-                <div class="perf-item">Normal: ${PERFORMANCE_DATA.normalDays} days</div>
-                <div class="perf-item">Under-Performing: ${PERFORMANCE_DATA.underPerformingDays} days</div>
-                <div class="perf-item">Zero Energy: ${PERFORMANCE_DATA.zeroEnergyDays} days</div>
-              </div>
-            </div>
-
-            <div class="section">
-              <h2>Daily Generation Data</h2>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Energy (kWh)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${dailyData
-                    .map(
-                      (day) => `
-                    <tr>
-                      <td>${formatDate(day.date)}</td>
-                      <td>${day.energyGeneratedkWh.toFixed(2)}</td>
-                    </tr>
-                  `
-                    )
-                    .join('')}
-                </tbody>
-              </table>
             </div>
 
             <div class="footer">
@@ -309,469 +280,464 @@ export default function PerformanceScreen() {
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri);
-        Alert.alert('Success', 'PDF report has been generated and shared!');
+        setAlertConfig({
+          visible: true,
+          title: 'Success',
+          message: 'PDF report has been generated and shared!',
+          type: 'success',
+        });
       } else {
-        Alert.alert('PDF Generated', `Report saved at: ${uri}`);
+        setAlertConfig({
+          visible: true,
+          title: 'PDF Generated',
+          message: `Report saved at: ${uri}`,
+          type: 'success',
+        });
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
-      Alert.alert('Error', 'Failed to generate PDF report');
+      setAlertConfig({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to generate PDF report',
+        type: 'error',
+      });
     } finally {
       setGeneratingPDF(false);
     }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style="light" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <Animated.View
-          entering={FadeInUp.duration(M3Motion.duration.medium)}
-          style={[styles.header, { backgroundColor: colors.primary }]}
+    <RNAnimated.View style={{ flex: 1, backgroundColor: animatedColors.background }}>
+      {/* Header */}
+      <RNAnimated.View
+        style={{
+          paddingTop: insets.top + M3Spacing.lg,
+          paddingHorizontal: M3Spacing.lg,
+          paddingBottom: M3Spacing.lg,
+          backgroundColor: animatedColors.surface,
+          ...M3Elevation.level0,
+        }}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flex: 1 }}>
+            <StyledText
+              style={{
+                ...M3Typography.headline.large,
+                color: colors.onSurface,
+                fontWeight: '600',
+              }}
+            >
+              Performance Analytics
+            </StyledText>
+            <StyledText
+              style={{
+                ...M3Typography.body.medium,
+                color: colors.onSurfaceVariant,
+                marginTop: 4,
+              }}
+            >
+              {currentMonth?.month || 'No Data'}
+            </StyledText>
+          </View>
+          <TouchableOpacity
+            style={{
+              backgroundColor: colors.secondaryContainer,
+              width: 48,
+              height: 48,
+              borderRadius: M3Shape.full,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+            onPress={() => router.back()}
+          >
+            <MaterialCommunityIcons name="close" size={24} color={colors.onSecondaryContainer} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Site Selector */}
+        <TouchableOpacity
+          style={{
+            marginTop: M3Spacing.md,
+            backgroundColor: colors.surfaceContainerHighest,
+            paddingVertical: M3Spacing.md,
+            paddingHorizontal: M3Spacing.lg,
+            borderRadius: M3Shape.large,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+          onPress={() => setShowSiteSelector(true)}
+          activeOpacity={0.7}
         >
-          <Text style={[styles.headerTitle, { color: colors.onPrimary }]}>
-            Performance Analytics
-          </Text>
-          <Text style={[styles.headerSubtitle, { color: `${colors.onPrimary}E6` }]}>
-            {site?.name || 'All Sites'} | {site?.capacity || 'N/A'}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <StyledText
+              style={{
+                ...M3Typography.label.small,
+                color: colors.onSurfaceVariant,
+                marginBottom: 4,
+              }}
+            >
+              Selected Site
+            </StyledText>
+            <StyledText
+              style={{
+                ...M3Typography.title.medium,
+                color: colors.onSurface,
+                fontWeight: '600',
+              }}
+            >
+              {displayName}
+            </StyledText>
+            <StyledText
+              style={{
+                ...M3Typography.body.small,
+                color: colors.onSurfaceVariant,
+                marginTop: 2,
+              }}
+            >
+              {displayCapacity}
+            </StyledText>
+          </View>
+          <MaterialCommunityIcons name="chevron-down" size={24} color={colors.onSurface} />
+        </TouchableOpacity>
+      </RNAnimated.View>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: M3Spacing.lg }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Stats Cards */}
+        <View style={{ flexDirection: 'row', gap: M3Spacing.md, marginTop: M3Spacing.lg }}>
+          <Animated.View
+            entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(100)}
+            style={{
+              flex: 1,
+              backgroundColor: colors.primaryContainer,
+              padding: M3Spacing.lg,
+              borderRadius: M3Shape.extraLarge,
+              ...M3Elevation.level1,
+            }}
+          >
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: M3Shape.medium,
+                backgroundColor: colors.primary,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: M3Spacing.sm,
+              }}
+            >
+              <MaterialCommunityIcons name="chart-line" size={24} color={colors.onPrimary} />
+            </View>
+            <StyledText
+              style={{
+                ...M3Typography.headline.medium,
+                color: colors.onPrimaryContainer,
+                fontWeight: '700',
+              }}
+            >
+              {stats.avgGeneration.toFixed(1)}
+            </StyledText>
+            <StyledText
+              style={{
+                ...M3Typography.body.small,
+                color: colors.onPrimaryContainer,
+                opacity: 0.8,
+                marginTop: 4,
+              }}
+            >
+              Avg kWh/day
+            </StyledText>
+          </Animated.View>
+
+          <Animated.View
+            entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(150)}
+            style={{
+              flex: 1,
+              backgroundColor: colors.secondaryContainer,
+              padding: M3Spacing.lg,
+              borderRadius: M3Shape.extraLarge,
+              ...M3Elevation.level1,
+            }}
+          >
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: M3Shape.medium,
+                backgroundColor: colors.secondary,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: M3Spacing.sm,
+              }}
+            >
+              <MaterialCommunityIcons name="flash" size={24} color={colors.onSecondary} />
+            </View>
+            <StyledText
+              style={{
+                ...M3Typography.headline.medium,
+                color: colors.onSecondaryContainer,
+                fontWeight: '700',
+              }}
+            >
+              {stats.peakPower.toFixed(1)}
+            </StyledText>
+            <StyledText
+              style={{
+                ...M3Typography.body.small,
+                color: colors.onSecondaryContainer,
+                opacity: 0.8,
+                marginTop: 4,
+              }}
+            >
+              Peak kWh
+            </StyledText>
+          </Animated.View>
+        </View>
+
+        <Animated.View
+          entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(200)}
+          style={{
+            backgroundColor: colors.tertiaryContainer,
+            padding: M3Spacing.lg,
+            borderRadius: M3Shape.extraLarge,
+            marginTop: M3Spacing.md,
+            ...M3Elevation.level1,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View>
+              <StyledText
+                style={{
+                  ...M3Typography.label.medium,
+                  color: colors.onTertiaryContainer,
+                  opacity: 0.8,
+                  marginBottom: 4,
+                }}
+              >
+                Total Energy Generated
+              </StyledText>
+              <StyledText
+                style={{
+                  ...M3Typography.display.small,
+                  color: colors.onTertiaryContainer,
+                  fontWeight: '700',
+                }}
+              >
+                {stats.totalEnergy.toFixed(1)} kWh
+              </StyledText>
+            </View>
+            <View
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: M3Shape.large,
+                backgroundColor: colors.tertiary,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <MaterialCommunityIcons name="lightning-bolt" size={32} color={colors.onTertiary} />
+            </View>
+          </View>
         </Animated.View>
 
-        {/* Stats Cards */}
-        <AnimatedView
-          entering={FadeInUp.duration(M3Motion.duration.medium).delay(100)}
-          style={styles.statsContainer}
+        {/* Bar Chart */}
+        <Animated.View
+          entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(250)}
+          style={{
+            backgroundColor: colors.surfaceContainerHigh,
+            padding: M3Spacing.lg,
+            borderRadius: M3Shape.extraLarge,
+            marginTop: M3Spacing.lg,
+            ...M3Elevation.level2,
+          }}
         >
-          <View
-            style={[
-              styles.statCard,
-              {
-                backgroundColor: colors.surfaceContainer,
-                shadowColor: colors.shadow,
-              },
-            ]}
-          >
-            <Text style={[styles.statLabel, { color: colors.onSurfaceVariant }]}>Average</Text>
-            <Text style={[styles.statValue, { color: colors.onSurface }]}>
-              {avgGeneration.toFixed(1)}
-            </Text>
-            <Text style={[styles.statUnit, { color: colors.outline }]}>kWh/day</Text>
-          </View>
-          <View
-            style={[
-              styles.statCard,
-              {
-                backgroundColor: colors.surfaceContainer,
-                shadowColor: colors.shadow,
-              },
-            ]}
-          >
-            <Text style={[styles.statLabel, { color: colors.onSurfaceVariant }]}>Peak</Text>
-            <Text style={[styles.statValue, { color: colors.onSurface }]}>
-              {peakGeneration.toFixed(1)}
-            </Text>
-            <Text style={[styles.statUnit, { color: colors.outline }]}>kWh</Text>
-          </View>
-          <View
-            style={[
-              styles.statCard,
-              {
-                backgroundColor: colors.surfaceContainer,
-                shadowColor: colors.shadow,
-              },
-            ]}
-          >
-            <Text style={[styles.statLabel, { color: colors.onSurfaceVariant }]}>Total</Text>
-            <Text style={[styles.statValue, { color: colors.onSurface }]}>
-              {totalGeneration.toFixed(1)}
-            </Text>
-            <Text style={[styles.statUnit, { color: colors.outline }]}>kWh</Text>
-          </View>
-        </AnimatedView>
-
-        {/* Bar Chart Section */}
-        <AnimatedView
-          entering={FadeInUp.duration(M3Motion.duration.medium).delay(200)}
-          style={[
-            styles.chartSection,
-            {
-              backgroundColor: colors.surfaceContainer,
-              shadowColor: colors.shadow,
-            },
-          ]}
-        >
-          {/* Month Navigation Header */}
-          <View style={styles.monthNavigationContainer}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: M3Spacing.md }}>
             <TouchableOpacity
               onPress={goToPreviousMonth}
               disabled={currentMonthIndex === 0}
-              style={[styles.monthNavButton, { opacity: currentMonthIndex === 0 ? 0.3 : 1 }]}
+              style={{ opacity: currentMonthIndex === 0 ? 0.3 : 1, padding: M3Spacing.sm }}
             >
-              <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
+              <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
             </TouchableOpacity>
-            <Text style={[styles.monthTitle, { color: colors.onSurface }]}>
-              {currentMonth.monthName}
-            </Text>
+            <StyledText
+              style={{
+                ...M3Typography.title.large,
+                color: colors.onSurface,
+                fontWeight: '600',
+              }}
+            >
+              Daily Generation
+            </StyledText>
             <TouchableOpacity
               onPress={goToNextMonth}
               disabled={currentMonthIndex === monthlyGroups.length - 1}
-              style={[
-                styles.monthNavButton,
-                { opacity: currentMonthIndex === monthlyGroups.length - 1 ? 0.3 : 1 },
-              ]}
+              style={{ opacity: currentMonthIndex === monthlyGroups.length - 1 ? 0.3 : 1, padding: M3Spacing.sm }}
             >
-              <Ionicons name="chevron-forward" size={24} color={colors.onSurface} />
+              <MaterialCommunityIcons name="chevron-right" size={28} color={colors.onSurface} />
             </TouchableOpacity>
           </View>
-          <Text style={[styles.chartTitle, { color: colors.onSurface }]}>
-            Daily Energy Generation
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ minWidth: chartWidth }}
+          >
             <BarChart
               data={barData}
-              barWidth={28}
-              spacing={12}
+              barWidth={barWidth}
+              spacing={spacing}
               roundedTop
               roundedBottom
               hideRules
               xAxisThickness={0}
               yAxisThickness={0}
-              yAxisTextStyle={{ color: colors.onSurfaceVariant }}
+              yAxisTextStyle={{ color: colors.onSurfaceVariant, ...M3Typography.body.small }}
               noOfSections={4}
-              maxValue={Math.ceil(peakGeneration * 1.2)}
+              maxValue={Math.ceil(stats.peakPower * 1.2)}
+              width={chartWidth - chartPadding}
             />
           </ScrollView>
-        </AnimatedView>
+        </Animated.View>
 
-        {/* Pie Chart Section */}
-        <AnimatedView
-          entering={FadeInUp.duration(M3Motion.duration.medium).delay(300)}
-          style={[
-            styles.chartSection,
-            {
-              backgroundColor: colors.surfaceContainer,
-              shadowColor: colors.shadow,
-            },
-          ]}
+        {/* Pie Chart */}
+        <Animated.View
+          entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(300)}
+          style={{
+            backgroundColor: colors.surfaceContainerHigh,
+            padding: M3Spacing.lg,
+            borderRadius: M3Shape.extraLarge,
+            marginTop: M3Spacing.lg,
+            ...M3Elevation.level2,
+          }}
         >
-          <Text style={[styles.chartTitle, { color: colors.onSurface }]}>
+          <StyledText
+            style={{
+              ...M3Typography.title.large,
+              color: colors.onSurface,
+              fontWeight: '600',
+              marginBottom: M3Spacing.lg,
+            }}
+          >
             Performance Distribution
-          </Text>
-          <View style={styles.pieChartContainer}>
+          </StyledText>
+          <View style={{ alignItems: 'center', marginVertical: M3Spacing.md }}>
             <PieChart
               data={pieData}
               donut
-              innerRadius={60}
-              radius={100}
-              innerCircleColor={colors.surfaceContainer}
+              innerRadius={70}
+              radius={110}
+              innerCircleColor={colors.surfaceContainerHigh}
               centerLabelComponent={() => (
                 <View>
-                  <Text style={[styles.pieChartCenterValue, { color: colors.onSurface }]}>
+                  <StyledText
+                    style={{
+                      ...M3Typography.display.small,
+                      color: colors.onSurface,
+                      fontWeight: '700',
+                      textAlign: 'center',
+                    }}
+                  >
                     {dailyData.length}
-                  </Text>
-                  <Text style={[styles.pieChartCenterLabel, { color: colors.onSurfaceVariant }]}>
+                  </StyledText>
+                  <StyledText
+                    style={{
+                      ...M3Typography.body.small,
+                      color: colors.onSurfaceVariant,
+                      textAlign: 'center',
+                    }}
+                  >
                     Days
-                  </Text>
+                  </StyledText>
                 </View>
               )}
             />
           </View>
-          <View style={styles.legendContainer}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: M3Spacing.md, marginTop: M3Spacing.md }}>
             {pieData.map((item, index) => (
-              <View key={index} style={styles.legendItem}>
-                <View style={[styles.legendColor, { backgroundColor: item.color }]} />
-                <Text style={[styles.legendLabel, { color: colors.onSurface }]}>
+              <View key={index} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: M3Shape.full,
+                    backgroundColor: item.color,
+                    marginRight: M3Spacing.xs,
+                  }}
+                />
+                <StyledText style={{ ...M3Typography.body.medium, color: colors.onSurface }}>
                   {item.label}: {item.value}
-                </Text>
+                </StyledText>
               </View>
             ))}
           </View>
-        </AnimatedView>
-
-        {/* Performance Breakdown */}
-        <AnimatedView
-          entering={FadeInUp.duration(M3Motion.duration.medium).delay(400)}
-          style={[
-            styles.breakdownSection,
-            {
-              backgroundColor: colors.surfaceContainer,
-              shadowColor: colors.shadow,
-            },
-          ]}
-        >
-          <Text style={[styles.breakdownTitle, { color: colors.onSurface }]}>
-            Performance Breakdown
-          </Text>
-          <View style={styles.breakdownGrid}>
-            <View style={styles.breakdownItem}>
-              <View
-                style={[
-                  styles.breakdownIconContainer,
-                  { backgroundColor: colors.primaryContainer },
-                ]}
-              >
-                <Ionicons name="trending-up" size={24} color={colors.primary} />
-              </View>
-              <Text style={[styles.breakdownValue, { color: colors.onSurface }]}>
-                {PERFORMANCE_DATA.overPerformingDays}
-              </Text>
-              <Text style={[styles.breakdownLabel, { color: colors.onSurfaceVariant }]}>
-                Over-Performing
-              </Text>
-            </View>
-            <View style={styles.breakdownItem}>
-              <View
-                style={[
-                  styles.breakdownIconContainer,
-                  { backgroundColor: colors.secondaryContainer },
-                ]}
-              >
-                <Ionicons name="checkmark-circle" size={24} color={colors.secondary} />
-              </View>
-              <Text style={[styles.breakdownValue, { color: colors.onSurface }]}>
-                {PERFORMANCE_DATA.normalDays}
-              </Text>
-              <Text style={[styles.breakdownLabel, { color: colors.onSurfaceVariant }]}>
-                Normal
-              </Text>
-            </View>
-            <View style={styles.breakdownItem}>
-              <View
-                style={[
-                  styles.breakdownIconContainer,
-                  { backgroundColor: colors.tertiaryContainer },
-                ]}
-              >
-                <Ionicons name="trending-down" size={24} color={colors.tertiary} />
-              </View>
-              <Text style={[styles.breakdownValue, { color: colors.onSurface }]}>
-                {PERFORMANCE_DATA.underPerformingDays}
-              </Text>
-              <Text style={[styles.breakdownLabel, { color: colors.onSurfaceVariant }]}>
-                Under-Performing
-              </Text>
-            </View>
-            <View style={styles.breakdownItem}>
-              <View
-                style={[styles.breakdownIconContainer, { backgroundColor: colors.errorContainer }]}
-              >
-                <Ionicons name="close-circle" size={24} color={colors.error} />
-              </View>
-              <Text style={[styles.breakdownValue, { color: colors.onSurface }]}>
-                {PERFORMANCE_DATA.zeroEnergyDays}
-              </Text>
-              <Text style={[styles.breakdownLabel, { color: colors.onSurfaceVariant }]}>
-                Zero Energy
-              </Text>
-            </View>
-          </View>
-        </AnimatedView>
+        </Animated.View>
 
         {/* Export Button */}
-        <AnimatedTouchableOpacity
-          entering={FadeInUp.duration(M3Motion.duration.medium).delay(500)}
+        <AnimatedTouchable
+          entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(350)}
           onPress={generatePDF}
           disabled={generatingPDF}
-          style={[
-            styles.exportButton,
-            {
-              backgroundColor: colors.primary,
-              shadowColor: colors.shadow,
-              opacity: generatingPDF ? 0.6 : 1,
-            },
-          ]}
+          style={{
+            backgroundColor: colors.primary,
+            paddingVertical: M3Spacing.lg,
+            paddingHorizontal: M3Spacing.xl,
+            borderRadius: M3Shape.extraLarge,
+            marginTop: M3Spacing.lg,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            ...M3Elevation.level3,
+            opacity: generatingPDF ? 0.6 : 1,
+          }}
           activeOpacity={0.8}
         >
           {generatingPDF ? (
             <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <>
-              <Ionicons name="document-text" size={24} color={colors.onPrimary} />
-              <Text style={[styles.exportButtonText, { color: colors.onPrimary }]}>
+              <MaterialCommunityIcons name="file-pdf-box" size={24} color={colors.onPrimary} />
+              <StyledText
+                style={{
+                  ...M3Typography.label.large,
+                  color: colors.onPrimary,
+                  marginLeft: M3Spacing.sm,
+                  fontWeight: '600',
+                }}
+              >
                 Export PDF Report
-              </Text>
+              </StyledText>
             </>
           )}
-        </AnimatedTouchableOpacity>
+        </AnimatedTouchable>
 
-        <View style={styles.bottomPadding} />
+        <View style={{ height: M3Spacing.xxxl + insets.bottom }} />
       </ScrollView>
-    </SafeAreaView>
+
+      {/* Site Selector Dialog */}
+      <M3SiteSelectorModal
+        visible={showSiteSelector}
+        sites={allSites}
+        selectedSiteId={selectedSiteId}
+        onSelectSite={(siteId) => {
+          setSelectedSiteId(siteId);
+        }}
+        onDismiss={() => setShowSiteSelector(false)}
+        showSearch={allSites.length > 10}
+      />
+
+      {/* M3 Alert Dialog */}
+      <M3AlertDialog
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        onDismiss={() => setAlertConfig({ ...alertConfig, visible: false })}
+      />
+    </RNAnimated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  header: {
-    padding: 24,
-    paddingTop: 48,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '400',
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-  },
-  statsContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    marginHorizontal: 4,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '400',
-  },
-  statUnit: {
-    fontSize: 12,
-  },
-  chartSection: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 16,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    marginBottom: 16,
-  },
-  pieChartContainer: {
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  pieChartCenterValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  pieChartCenterLabel: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  legendContainer: {
-    marginTop: 16,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 6,
-  },
-  legendLabel: {
-    fontSize: 14,
-  },
-  breakdownSection: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 20,
-    borderRadius: 16,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  breakdownTitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    marginBottom: 16,
-  },
-  breakdownGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  breakdownItem: {
-    width: '48%',
-    alignItems: 'center',
-    padding: 12,
-  },
-  breakdownIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  breakdownValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  breakdownLabel: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  exportButton: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 16,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  exportButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  bottomPadding: {
-    height: 32,
-  },
-  monthNavigationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  monthNavButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  monthTitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    textAlign: 'center',
-    flex: 1,
-  },
-});

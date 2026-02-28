@@ -15,14 +15,9 @@ const activitySlice = createSlice({
   name: 'activity',
   initialState,
   reducers: {
-    addActivity: (state, action: PayloadAction<Omit<Activity, 'id' | 'timestamp' | 'synced'>>) => {
-      const newActivity: Activity = {
-        ...action.payload,
-        id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        timestamp: Date.now(),
-        synced: false,
-      };
-      state.activities.unshift(newActivity); // Add to beginning for newest first
+    addActivity: (state, action: PayloadAction<Activity>) => {
+      // Accept a full Activity object with ID already generated
+      state.activities.unshift(action.payload); // Add to beginning for newest first
     },
 
     markActivitySynced: (state, action: PayloadAction<string>) => {

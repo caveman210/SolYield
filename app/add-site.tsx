@@ -16,18 +16,18 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Linking,
 } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSiteManagement } from '../lib/hooks/useSiteManagement';
 import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
+import M3ErrorDialog from './components/M3ErrorDialog';
 
 /*
  * OLD CODE - react-native-maps (requires Google Maps API key on Android)
@@ -50,6 +50,7 @@ import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
 export default function AddSiteScreen() {
   const { createSite } = useSiteManagement();
   const colors = useMaterialYouColors();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
   // Form state
   const [siteName, setSiteName] = useState('');
@@ -57,12 +58,29 @@ export default function AddSiteScreen() {
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   const useCurrentLocation = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required to use this feature.');
+        setDialogConfig({
+          visible: true,
+          title: 'Permission Denied',
+          message: 'Location permission is required to use this feature.',
+          type: 'error',
+        });
         return;
       }
 
@@ -70,10 +88,20 @@ export default function AddSiteScreen() {
       setLatitude(location.coords.latitude.toFixed(6));
       setLongitude(location.coords.longitude.toFixed(6));
 
-      Alert.alert('Success', 'Current location has been filled in!');
+      setDialogConfig({
+        visible: true,
+        title: 'Success',
+        message: 'Current location has been filled in!',
+        type: 'success',
+      });
     } catch (error) {
       console.error('Error getting location:', error);
-      Alert.alert('Error', 'Failed to get current location. Please try again.');
+      setDialogConfig({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to get current location. Please try again.',
+        type: 'error',
+      });
     }
   }, []);
 
@@ -86,12 +114,22 @@ export default function AddSiteScreen() {
 
   const handleSubmit = useCallback(() => {
     if (!siteName.trim()) {
-      Alert.alert('Validation Error', 'Please enter a site name.');
+      setDialogConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a site name.',
+        type: 'error',
+      });
       return;
     }
 
     if (!capacity.trim()) {
-      Alert.alert('Validation Error', 'Please enter the site capacity.');
+      setDialogConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter the site capacity.',
+        type: 'error',
+      });
       return;
     }
 
@@ -99,12 +137,22 @@ export default function AddSiteScreen() {
     const lng = parseFloat(longitude);
 
     if (isNaN(lat) || lat < -90 || lat > 90) {
-      Alert.alert('Validation Error', 'Please enter a valid latitude between -90 and 90.');
+      setDialogConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a valid latitude between -90 and 90.',
+        type: 'error',
+      });
       return;
     }
 
     if (isNaN(lng) || lng < -180 || lng > 180) {
-      Alert.alert('Validation Error', 'Please enter a valid longitude between -180 and 180.');
+      setDialogConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a valid longitude between -180 and 180.',
+        type: 'error',
+      });
       return;
     }
 
@@ -115,20 +163,34 @@ export default function AddSiteScreen() {
         name: siteName.trim(),
         capacity: capacity.trim(),
         location: { lat, lng },
+        createdAt: Date.now(),
       });
 
-      Alert.alert('Success', `Site "${siteName}" has been created successfully!`, [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
+      setDialogConfig({
+        visible: true,
+        title: 'Success',
+        message: `Site "${siteName}" has been created successfully!`,
+        type: 'success',
+        onConfirm: () => {
+          // If returnTo param is provided, navigate back with returnFrom param
+          if (returnTo === 'add-visit') {
+            router.push('/add-visit?returnFrom=add-site' as any);
+          } else {
+            router.back();
+          }
         },
-      ]);
+      });
     } catch (error) {
       console.error('Error creating site:', error);
-      Alert.alert('Error', 'Failed to create site. Please try again.');
+      setDialogConfig({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to create site. Please try again.',
+        type: 'error',
+      });
       setIsSubmitting(false);
     }
-  }, [siteName, capacity, latitude, longitude, createSite]);
+  }, [siteName, capacity, latitude, longitude, createSite, returnTo]);
 
   return (
     <SafeAreaView
@@ -291,31 +353,46 @@ export default function AddSiteScreen() {
               latitude/longitude values.
             </Text>
           </View>
-        </ScrollView>
 
-        <View
-          style={[
-            styles.footer,
-            { backgroundColor: colors.surface, borderTopColor: colors.outlineVariant },
-          ]}
-        >
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              {
-                backgroundColor: isSubmitting ? colors.surfaceContainerHigh : colors.primary,
-              },
-            ]}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-          >
-            <MaterialCommunityIcons name="check-circle" size={24} color={colors.onPrimary} />
-            <Text style={[styles.submitButtonText, { color: colors.onPrimary }]}>
-              {isSubmitting ? 'Creating Site...' : 'Create Site'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+          {/* Submit Button */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: isSubmitting ? 0.6 : 1,
+                },
+              ]}
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons
+                name="solar-power-variant"
+                size={24}
+                color={colors.onPrimary}
+              />
+              <Text style={[styles.submitButtonText, { color: colors.onPrimary }]}>
+                {isSubmitting ? 'Creating Site...' : 'Create Site'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* M3ErrorDialog */}
+      <M3ErrorDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        onConfirm={() => {
+          dialogConfig.onConfirm?.();
+          setDialogConfig({ ...dialogConfig, visible: false });
+        }}
+        confirmText="OK"
+      />
     </SafeAreaView>
   );
 }
@@ -437,6 +514,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     lineHeight: 20,
+  },
+  buttonContainer: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    marginTop: 8,
   },
   footer: {
     padding: 16,

@@ -7,9 +7,12 @@ import { useFonts } from 'expo-font';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MaterialYouProvider, useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
 import { useEffect } from 'react';
-import { Platform, View, ActivityIndicator } from 'react-native';
+import { Platform, View, ActivityIndicator, Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { DatabaseProvider } from '@nozbe/watermelondb/react';
+import { database } from '../database';
+import { useDatabase } from '../lib/hooks/useDatabase';
 
 function AppContent() {
   const colors = useMaterialYouColors();
@@ -82,6 +85,14 @@ function AppContent() {
           }}
         />
         <Stack.Screen
+          name="inspection-form"
+          options={{
+            title: 'New Inspection',
+            headerShown: true,
+            presentation: 'modal',
+          }}
+        />
+        <Stack.Screen
           name="styleguide"
           options={{
             title: 'Style Guide',
@@ -91,6 +102,95 @@ function AppContent() {
       </Stack>
     </>
   );
+}
+
+/**
+ * InitializationGate
+ * Checks if database is ready and shows loading/error screens.
+ * Must be INSIDE DatabaseProvider so hooks can access database context.
+ */
+function InitializationGate({ children }: { children: React.ReactNode }) {
+  const dbState = useDatabase();
+  const colors = useMaterialYouColors();
+
+  // Show loading screen during database initialization/migration
+  if (dbState.isLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: colors.background,
+          padding: 24,
+        }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text
+          style={{
+            marginTop: 16,
+            fontSize: 16,
+            color: colors.onBackground,
+            textAlign: 'center',
+          }}
+        >
+          {dbState.migrationStatus === 'running'
+            ? 'Setting up database...'
+            : 'Initializing app...'}
+        </Text>
+        {dbState.migrationStatus === 'running' && (
+          <Text
+            style={{
+              marginTop: 8,
+              fontSize: 14,
+              color: colors.onSurfaceVariant,
+              textAlign: 'center',
+            }}
+          >
+            This may take a few moments on first launch
+          </Text>
+        )}
+      </View>
+    );
+  }
+
+  // Show error screen if database initialization failed
+  if (dbState.error) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: colors.background,
+          padding: 24,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: '600',
+            color: colors.error,
+            marginBottom: 12,
+          }}
+        >
+          Database Error
+        </Text>
+        <Text
+          style={{
+            fontSize: 14,
+            color: colors.onSurfaceVariant,
+            textAlign: 'center',
+          }}
+        >
+          {dbState.error.message}
+        </Text>
+      </View>
+    );
+  }
+
+  // Database is ready, render app
+  return <>{children}</>;
 }
 
 export default function RootLayout() {
@@ -114,7 +214,11 @@ export default function RootLayout() {
           persistor={persistor}
         >
           <MaterialYouProvider>
-            <AppContent />
+            <DatabaseProvider database={database}>
+              <InitializationGate>
+                <AppContent />
+              </InitializationGate>
+            </DatabaseProvider>
           </MaterialYouProvider>
         </PersistGate>
       </Provider>

@@ -39,6 +39,7 @@ export interface MaterialYouColors {
   surfaceContainer: string;
   surfaceContainerHigh: string;
   surfaceContainerHighest: string;
+  isDark: boolean;
 }
 
 // Default M3 fallback palette (green energy theme) - LIGHT
@@ -79,6 +80,7 @@ const DEFAULT_LIGHT_PALETTE: MaterialYouColors = {
   surfaceContainer: '#EBF0E9',
   surfaceContainerHigh: '#E5EBE3',
   surfaceContainerHighest: '#DFE5DD',
+  isDark: false,
 };
 
 // Dark theme palette
@@ -119,6 +121,7 @@ const DEFAULT_DARK_PALETTE: MaterialYouColors = {
   surfaceContainer: '#1B211E',
   surfaceContainerHigh: '#262C28',
   surfaceContainerHighest: '#303733',
+  isDark: true,
 };
 
 /**
@@ -393,6 +396,7 @@ export function useMaterialYou(): MaterialYouColors {
                 ? DEFAULT_DARK_PALETTE.surfaceContainerHighest
                 : DEFAULT_LIGHT_PALETTE.surfaceContainerHighest
             ),
+            isDark: isDark,
           };
 
           console.log('✨ Material You colors applied:', colorScheme, 'mode');

@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -15,13 +14,14 @@ import { useState, useCallback } from 'react';
 import { router } from 'expo-router';
 import Animated, { FadeInUp, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { FORM_SCHEMA } from '../../lib/data/formSchema';
-import { FormField as FormFieldType } from '../../lib/types';
-import { M3Motion } from '../../lib/design';
-import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
-import { useInspections, useInspectionValidation, useImageCapture } from '../../lib/hooks/useInspections';
-import { useOfflineSync } from '../../lib/hooks/useOfflineSync';
-import { useSites } from '../../lib/hooks/useSites';
+import { FORM_SCHEMA } from '../lib/data/formSchema';
+import { FormField as FormFieldType } from '../lib/types';
+import { M3Motion } from '../lib/design';
+import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
+import { useInspections, useInspectionValidation, useImageCapture } from '../lib/hooks/useInspections';
+import { useOfflineSync } from '../lib/hooks/useOfflineSync';
+import { useSites } from '../lib/hooks/useSites';
+import M3ErrorDialog from './components/M3ErrorDialog';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -36,6 +36,21 @@ export default function InspectionScreen() {
   
   const [formValues, setFormValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'warning' | 'info';
+    showCancel?: boolean;
+    confirmText?: string;
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+    showCancel: false,
+  });
 
   const handleFieldChange = useCallback((fieldId: string, value: any) => {
     setFormValues((prev) => ({ ...prev, [fieldId]: value }));
@@ -53,7 +68,14 @@ export default function InspectionScreen() {
     // Validate form
     const isValid = validateFormData(formValues, FORM_SCHEMA);
     if (!isValid) {
-      Alert.alert('Validation Error', 'Please fill in all required fields');
+      setDialogConfig({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please fill in all required fields',
+        type: 'error',
+        confirmText: 'OK',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, visible: false })),
+      });
       return;
     }
 
@@ -74,23 +96,24 @@ export default function InspectionScreen() {
       setFormValues({});
       setSubmitting(false);
       
-      Alert.alert(
-        'Success', 
-        `Inspection submitted successfully!${!isOnline ? ' Will sync when online.' : ''}`,
-        [
-          {
-            text: 'View History',
-            onPress: () => router.push('/history'),
-          },
-          {
-            text: 'OK',
-            style: 'default',
-          },
-        ]
-      );
+      setDialogConfig({
+        visible: true,
+        title: 'Success',
+        message: `Inspection submitted successfully!${!isOnline ? ' Will sync when online.' : ''}`,
+        type: 'success',
+        confirmText: 'OK',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, visible: false })),
+      });
     } catch (error) {
       setSubmitting(false);
-      Alert.alert('Error', 'Failed to submit inspection. Please try again.');
+      setDialogConfig({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to submit inspection. Please try again.',
+        type: 'error',
+        confirmText: 'OK',
+        onConfirm: () => setDialogConfig(prev => ({ ...prev, visible: false })),
+      });
     }
   }, [formValues, validateFormData, submitInspection, sites, getSiteName, isOnline]);
 
@@ -455,6 +478,18 @@ export default function InspectionScreen() {
           </Animated.Text>
         </ScrollView>
       </KeyboardAvoidingView>
+      
+      {/* M3 Error Dialog */}
+      <M3ErrorDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        confirmText={dialogConfig.confirmText}
+        showCancel={dialogConfig.showCancel}
+        onConfirm={dialogConfig.onConfirm}
+        onDismiss={() => setDialogConfig(prev => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 }

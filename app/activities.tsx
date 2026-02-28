@@ -91,8 +91,12 @@ export default function ActivitiesScreen() {
   }, []);
 
   const handleActivityPress = (activity: Activity) => {
-    // Navigate to relevant screen based on activity type
-    if (activity.siteId) {
+    // For inspection activities, navigate to the inspection detail page
+    if (activity.type === 'inspection' && activity.metadata?.inspectionId) {
+      router.push(`/inspection/${activity.metadata.inspectionId}` as any);
+    }
+    // For other activities with siteId, navigate to site detail
+    else if (activity.siteId) {
       router.push(`/site/${activity.siteId}` as any);
     }
   };

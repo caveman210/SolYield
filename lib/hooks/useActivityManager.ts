@@ -1,13 +1,14 @@
-import { useSelector, useDispatch } from 'react-redux';
-import { useCallback } from 'react';
-import { RootState } from '../../store';
+/**
+ * useActivityManager Hook
+ * 
+ * Provides activity management operations (CRUD) using WatermelonDB.
+ * Migrated from Redux to WatermelonDB as single source of truth.
+ */
+
+import { useCallback, useMemo } from 'react';
 import { Activity, ActivityType } from '../types';
-import {
-  addActivity,
-  markActivitySynced,
-  clearActivities,
-  removeActivity,
-} from '../../store/slices/activitySlice';
+import { useDBActivities, useDBRecentActivities, useDBSiteActivities } from './useDBActivities';
+import { getActivitiesCollection, database } from '../../database';
 import {
   getMostRecentActivities,
   filterActivitiesByType,
@@ -16,12 +17,11 @@ import {
 } from '../utils/activityUtils';
 
 /**
- * Hook for accessing all activities from Redux store
+ * Hook for accessing all activities from WatermelonDB
  * Provides read-only access to activity state
  */
 export function useActivities() {
-  const activities = useSelector((state: RootState) => state.activity.activities);
-  const isLoading = useSelector((state: RootState) => state.activity.isLoading);
+  const { activities, isLoading } = useDBActivities();
 
   return {
     activities,
@@ -33,11 +33,10 @@ export function useActivities() {
  * Hook for accessing recent activities (limited count)
  */
 export function useRecentActivities(limit: number = 5) {
-  const { activities, isLoading } = useActivities();
-  const recentActivities = getMostRecentActivities(activities, limit);
+  const { activities, isLoading } = useDBRecentActivities(limit);
 
   return {
-    activities: recentActivities,
+    activities,
     isLoading,
   };
 }
@@ -46,8 +45,11 @@ export function useRecentActivities(limit: number = 5) {
  * Hook for filtering activities by type
  */
 export function useActivitiesByType(type: ActivityType | 'all') {
-  const { activities, isLoading } = useActivities();
-  const filteredActivities = filterActivitiesByType(activities, type);
+  const { activities, isLoading } = useDBActivities();
+  const filteredActivities = useMemo(
+    () => filterActivitiesByType(activities, type),
+    [activities, type]
+  );
 
   return {
     activities: filteredActivities,
@@ -59,11 +61,10 @@ export function useActivitiesByType(type: ActivityType | 'all') {
  * Hook for filtering activities by site
  */
 export function useActivitiesBySite(siteId: string) {
-  const { activities, isLoading } = useActivities();
-  const siteActivities = filterActivitiesBySite(activities, siteId);
+  const { activities, isLoading } = useDBSiteActivities(siteId);
 
   return {
-    activities: siteActivities,
+    activities,
     isLoading,
   };
 }
@@ -73,32 +74,92 @@ export function useActivitiesBySite(siteId: string) {
  * Separates business logic from UI components
  */
 export function useActivityActions() {
-  const dispatch = useDispatch();
-
   const createActivity = useCallback(
-    (activityData: Omit<Activity, 'id' | 'timestamp' | 'synced'>) => {
-      dispatch(addActivity(activityData));
+    async (activityData: Omit<Activity, 'id' | 'timestamp' | 'synced'>) => {
+      try {
+        await database.write(async () => {
+          const activitiesCollection = getActivitiesCollection();
+          await activitiesCollection.create((activity: any) => {
+            activity.type = activityData.type;
+            activity.title = activityData.title;
+            activity.description = activityData.description || '';
+            activity.siteId = activityData.siteId || '';
+            activity.siteName = activityData.siteName || '';
+            activity.timestamp = Date.now();
+            activity.icon = activityData.icon;
+            activity.metadata = JSON.stringify(activityData.metadata || {});
+            activity.archived = false;
+            activity.synced = false;
+          });
+        });
+      } catch (error) {
+        console.error('Error creating activity:', error);
+        throw error;
+      }
     },
-    [dispatch]
+    []
   );
 
   const syncActivity = useCallback(
-    (activityId: string) => {
-      dispatch(markActivitySynced(activityId));
+    async (activityId: string) => {
+      try {
+        const activitiesCollection = getActivitiesCollection();
+        const activity = await activitiesCollection.find(activityId);
+        
+        if (!activity) {
+          console.warn(`Activity ${activityId} not found`);
+          return;
+        }
+
+        await database.write(async () => {
+          await activity.markAsSynced();
+        });
+      } catch (error) {
+        console.error('Error syncing activity:', error);
+        throw error;
+      }
     },
-    [dispatch]
+    []
   );
 
   const deleteActivity = useCallback(
-    (activityId: string) => {
-      dispatch(removeActivity(activityId));
+    async (activityId: string) => {
+      try {
+        const activitiesCollection = getActivitiesCollection();
+        const activity = await activitiesCollection.find(activityId);
+        
+        if (!activity) {
+          console.warn(`Activity ${activityId} not found`);
+          return;
+        }
+
+        await database.write(async () => {
+          await activity.markAsDeleted(); // Soft delete
+        });
+      } catch (error) {
+        console.error('Error deleting activity:', error);
+        throw error;
+      }
     },
-    [dispatch]
+    []
   );
 
-  const clearAll = useCallback(() => {
-    dispatch(clearActivities());
-  }, [dispatch]);
+  const clearAll = useCallback(async () => {
+    try {
+      const activitiesCollection = getActivitiesCollection();
+      const allActivities = await activitiesCollection.query().fetch();
+
+      await database.write(async () => {
+        // Batch delete all activities
+        await Promise.all(
+          allActivities.map(activity => activity.markAsDeleted())
+        );
+      });
+    } catch (error) {
+      console.error('Error clearing activities:', error);
+      throw error;
+    }
+  }, []);
 
   return {
     createActivity,
@@ -112,8 +173,11 @@ export function useActivityActions() {
  * Hook for getting unsynced activities (for offline sync)
  */
 export function useUnsyncedActivities() {
-  const { activities } = useActivities();
-  const unsyncedActivities = getUnsyncedActivities(activities);
+  const { activities } = useDBActivities();
+  const unsyncedActivities = useMemo(
+    () => getUnsyncedActivities(activities),
+    [activities]
+  );
 
   return {
     unsyncedActivities,

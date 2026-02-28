@@ -96,6 +96,9 @@ function createAnimatedColors(
 
   for (const key in toColors) {
     const colorKey = key as keyof MaterialYouColors;
+    // Skip isDark as it's a boolean, not a color
+    if (colorKey === 'isDark') continue;
+    
     animated[colorKey] = progress.interpolate({
       inputRange: [0, 1],
       outputRange: [fromColors[colorKey], toColors[colorKey]],

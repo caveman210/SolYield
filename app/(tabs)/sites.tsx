@@ -8,6 +8,7 @@ import { Site } from '../../lib/types';
 import { M3Motion, M3Spacing } from '../../lib/design';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
 import { useSiteManagement } from '../../lib/hooks/useSiteManagement';
+import SiteMapWidget from '../components/maps/SiteMapWidget';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -45,6 +46,15 @@ export default function SitesScreen() {
         <Text style={[styles.locationText, { color: colors.onSurfaceVariant }]}>
           {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}
         </Text>
+      </View>
+      <View style={styles.mapPreview}>
+        <SiteMapWidget
+          location={item.location}
+          siteName={item.name}
+          subtitle={`${item.location.lat.toFixed(2)}°, ${item.location.lng.toFixed(2)}°`}
+          height={120}
+          showCoordinates={false}
+        />
       </View>
     </AnimatedTouchableOpacity>
   );
@@ -167,6 +177,9 @@ const styles = StyleSheet.create({
   },
   locationText: {
     fontSize: 14,
+  },
+  mapPreview: {
+    marginTop: 12,
   },
   fab: {
     position: 'absolute',

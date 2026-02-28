@@ -2,147 +2,234 @@
  * useScheduleManagement Hook
  * 
  * Provides schedule/visit management operations (CRUD).
- * Integrates with Redux and combines static + user visits.
+ * Uses WatermelonDB as single source of truth.
+ * Automatically creates activity feed entries.
  */
 
-import { useCallback } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import {
-  addVisit,
-  updateVisit,
-  deleteVisit,
-  selectUserVisits,
-  selectUserVisitsBySite,
-  selectUpcomingUserVisits,
-} from '../../store/slices/scheduleSlice';
-import { addActivity } from '../../store/slices/activitySlice';
-import { ScheduleVisit } from '../types';
-import { SCHEDULE as STATIC_SCHEDULE } from '../data/schedule';
+import { useCallback, useMemo } from 'react';
+import { useSchedules, CreateScheduleData } from './useSchedules';
+import { getActivitiesCollection, database } from '../../database';
+import Schedule from '../../database/models/Schedule';
+
+// Enhanced type for backward compatibility (extends lib/types ScheduleVisit)
+export interface ScheduleVisit {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  siteId: string; // For requiem visits, use empty string or fallback site
+  assignedUserId?: string;
+  status?: 'pending' | 'in-progress' | 'completed' | 'cancelled';
+  description?: string; // Changed from 'notes' to match Schedule model
+  isRequiem?: boolean;
+  requiemReason?: string;
+  linkedSiteId?: string;
+}
+
+/**
+ * Convert WatermelonDB Schedule model to legacy ScheduleVisit type
+ */
+function convertToLegacyVisit(schedule: Schedule): ScheduleVisit {
+  return {
+    id: schedule.id,
+    title: schedule.title,
+    date: schedule.date,
+    time: schedule.time,
+    siteId: schedule.siteId || '', // Use empty string for requiem visits
+    assignedUserId: schedule.assignedUserId,
+    status: schedule.status as any,
+    description: schedule.description,
+    isRequiem: schedule.isRequiem,
+    requiemReason: schedule.requiemReason || undefined,
+    linkedSiteId: schedule.linkedSiteId || undefined,
+  };
+}
 
 /**
  * Hook for managing schedule/visits (create, update, delete)
+ * Maintains backward compatibility while using WatermelonDB
  */
 export const useScheduleManagement = () => {
-  const dispatch = useDispatch();
-  const userVisits = useSelector(selectUserVisits);
+  const { 
+    schedules, 
+    isLoading, 
+    createSchedule, 
+    updateSchedule, 
+    deleteSchedule,
+    refresh
+  } = useSchedules();
 
-  /**
-   * Get all visits (static + user-created)
-   */
-  const getAllVisits = useCallback((): ScheduleVisit[] => {
-    const allVisits = [...STATIC_SCHEDULE, ...userVisits];
-    
-    // Sort by date and time
-    return allVisits.sort((a, b) => {
-      const dateComparison = a.date.localeCompare(b.date);
-      if (dateComparison !== 0) return dateComparison;
-      return a.time.localeCompare(b.time);
-    });
-  }, [userVisits]);
+  // Convert to legacy format for backward compatibility
+  const allVisits = useMemo(
+    () => schedules.map(convertToLegacyVisit),
+    [schedules]
+  );
+
+  // Separate user-created visits (those with 'schedule_user_' prefix)
+  const userVisits = useMemo(
+    () => allVisits.filter(v => v.id.startsWith('schedule_user_')),
+    [allVisits]
+  );
 
   /**
    * Schedule a new visit
    */
   const scheduleVisit = useCallback(
-    (visitData: Omit<ScheduleVisit, 'id'>, siteName?: string) => {
-      dispatch(addVisit(visitData));
+    async (visitData: Omit<ScheduleVisit, 'id'>, siteName?: string) => {
+      try {
+        const newSchedule = await createSchedule({
+          title: visitData.title,
+          date: visitData.date,
+          time: visitData.time,
+          siteId: visitData.siteId || undefined, // Convert empty string to undefined
+          assignedUserId: visitData.assignedUserId || 'user_arjun',
+          status: visitData.status || 'pending',
+          notes: visitData.description, // Map description -> notes
+          isRequiem: visitData.isRequiem,
+          requiemReason: visitData.requiemReason,
+          linkedSiteId: visitData.linkedSiteId,
+        });
 
-      // Add activity to feed
-      dispatch(
-        addActivity({
-          type: 'schedule',
-          title: 'Visit Scheduled',
-          description: `${visitData.title} - ${visitData.date} at ${visitData.time}`,
-          siteId: visitData.siteId,
-          siteName: siteName,
-          icon: 'calendar-plus',
-        })
-      );
+        // Create activity feed entry
+        await database.write(async () => {
+          const activitiesCollection = getActivitiesCollection();
+          await activitiesCollection.create((activity: any) => {
+            activity.type = 'schedule';
+            activity.title = 'Visit Scheduled';
+            activity.description = `${visitData.title} - ${visitData.date} at ${visitData.time}`;
+            activity.siteId = visitData.siteId || '';
+            activity.siteName = siteName || '';
+            activity.timestamp = Date.now();
+            activity.icon = 'calendar-plus';
+            activity.metadata = JSON.stringify({});
+            activity.archived = false;
+            activity.synced = false;
+          });
+        });
 
-      return true;
+        refresh();
+        return true;
+      } catch (error) {
+        console.error('Error scheduling visit:', error);
+        return false;
+      }
     },
-    [dispatch]
+    [createSchedule, refresh]
   );
 
   /**
    * Update an existing user visit
    */
   const editVisit = useCallback(
-    (visitData: ScheduleVisit, siteName?: string) => {
-      // Only allow editing user-created visits
-      const isUserVisit = userVisits.some((v) => v.id === visitData.id);
-      if (!isUserVisit) {
-        console.warn('Cannot edit static visits');
+    async (visitData: ScheduleVisit, siteName?: string) => {
+      try {
+        // Only allow editing user-created visits
+        const isUserVisit = visitData.id.startsWith('schedule_user_');
+        if (!isUserVisit) {
+          console.warn('Cannot edit built-in schedules');
+          return false;
+        }
+
+        await updateSchedule(visitData.id, {
+          title: visitData.title,
+          date: visitData.date,
+          time: visitData.time,
+          siteId: visitData.siteId || undefined,
+          assignedUserId: visitData.assignedUserId,
+          status: visitData.status,
+          notes: visitData.description, // Map description -> notes
+          isRequiem: visitData.isRequiem,
+          requiemReason: visitData.requiemReason,
+          linkedSiteId: visitData.linkedSiteId,
+        });
+
+        // Create activity feed entry
+        await database.write(async () => {
+          const activitiesCollection = getActivitiesCollection();
+          await activitiesCollection.create((activity: any) => {
+            activity.type = 'schedule';
+            activity.title = 'Visit Updated';
+            activity.description = `${visitData.title} - ${visitData.date} at ${visitData.time}`;
+            activity.siteId = visitData.siteId || '';
+            activity.siteName = siteName || '';
+            activity.timestamp = Date.now();
+            activity.icon = 'calendar-check';
+            activity.metadata = JSON.stringify({});
+            activity.archived = false;
+            activity.synced = false;
+          });
+        });
+
+        refresh();
+        return true;
+      } catch (error) {
+        console.error('Error updating visit:', error);
         return false;
       }
-
-      dispatch(updateVisit(visitData));
-
-      // Add activity to feed
-      dispatch(
-        addActivity({
-          type: 'schedule',
-          title: 'Visit Updated',
-          description: `${visitData.title} - ${visitData.date} at ${visitData.time}`,
-          siteId: visitData.siteId,
-          siteName: siteName,
-          icon: 'calendar-check',
-        })
-      );
-
-      return true;
     },
-    [dispatch, userVisits]
+    [updateSchedule, refresh]
   );
 
   /**
    * Delete a user visit
    */
   const removeVisit = useCallback(
-    (visitId: string, visitTitle?: string) => {
-      // Only allow deleting user-created visits
-      const isUserVisit = userVisits.some((v) => v.id === visitId);
-      if (!isUserVisit) {
-        console.warn('Cannot delete static visits');
+    async (visitId: string, visitTitle?: string) => {
+      try {
+        // Only allow deleting user-created visits
+        const isUserVisit = visitId.startsWith('schedule_user_');
+        if (!isUserVisit) {
+          console.warn('Cannot delete built-in schedules');
+          return false;
+        }
+
+        await deleteSchedule(visitId);
+
+        // Create activity feed entry
+        await database.write(async () => {
+          const activitiesCollection = getActivitiesCollection();
+          await activitiesCollection.create((activity: any) => {
+            activity.type = 'schedule';
+            activity.title = 'Visit Cancelled';
+            activity.description = `Cancelled: ${visitTitle || 'Unknown Visit'}`;
+            activity.siteId = '';
+            activity.siteName = '';
+            activity.timestamp = Date.now();
+            activity.icon = 'calendar-remove';
+            activity.metadata = JSON.stringify({});
+            activity.archived = false;
+            activity.synced = false;
+          });
+        });
+
+        refresh();
+        return true;
+      } catch (error) {
+        console.error('Error deleting visit:', error);
         return false;
       }
-
-      dispatch(deleteVisit(visitId));
-
-      // Add activity to feed
-      dispatch(
-        addActivity({
-          type: 'schedule',
-          title: 'Visit Cancelled',
-          description: `Cancelled: ${visitTitle || 'Unknown Visit'}`,
-          icon: 'calendar-remove',
-        })
-      );
-
-      return true;
     },
-    [dispatch, userVisits]
+    [deleteSchedule, refresh]
   );
 
   /**
-   * Check if a visit can be edited/deleted
+   * Check if a visit can be edited/deleted (must be user-created)
    */
   const canModifyVisit = useCallback(
     (visitId: string): boolean => {
-      return userVisits.some((v) => v.id === visitId);
+      return visitId.startsWith('schedule_user_');
     },
-    [userVisits]
+    []
   );
 
   /**
-   * Get visit by ID (checks both static and user visits)
+   * Get visit by ID
    */
   const getVisitById = useCallback(
     (visitId: string): ScheduleVisit | undefined => {
-      const allVisits = getAllVisits();
       return allVisits.find((v) => v.id === visitId);
     },
-    [getAllVisits]
+    [allVisits]
   );
 
   /**
@@ -150,10 +237,9 @@ export const useScheduleManagement = () => {
    */
   const getVisitsBySite = useCallback(
     (siteId: string): ScheduleVisit[] => {
-      const allVisits = getAllVisits();
       return allVisits.filter((v) => v.siteId === siteId);
     },
-    [getAllVisits]
+    [allVisits]
   );
 
   /**
@@ -161,15 +247,15 @@ export const useScheduleManagement = () => {
    */
   const getUpcomingVisits = useCallback((): ScheduleVisit[] => {
     const today = new Date().toISOString().split('T')[0];
-    const allVisits = getAllVisits();
     return allVisits.filter((v) => v.date >= today);
-  }, [getAllVisits]);
+  }, [allVisits]);
 
   return {
     // Data
     userVisits,
-    allVisits: getAllVisits(),
+    allVisits,
     upcomingVisits: getUpcomingVisits(),
+    isLoading,
 
     // Actions
     scheduleVisit,

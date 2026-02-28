@@ -6,6 +6,7 @@ export interface Site {
     lng: number;
   };
   capacity: string;
+  createdAt: number;
 }
 
 export interface ScheduleVisit {

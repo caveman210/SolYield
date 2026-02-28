@@ -22,6 +22,7 @@ interface CheckInResult {
   success: boolean;
   distance: number;
   message: string;
+  activityId?: string; // ID of the created activity for linking to schedule
 }
 
 const GEOFENCE_RADIUS_METERS = 500; // 500 meters as per requirement
@@ -235,7 +236,7 @@ export const useGeofencing = () => {
 
         if (withinFence) {
           // Add activity for successful check-in
-          addActivity({
+          const activityId = await addActivity({
             type: 'check-in',
             title: 'Site Check-in',
             description: `Checked in at ${site.name}`,
@@ -252,6 +253,7 @@ export const useGeofencing = () => {
             success: true,
             distance,
             message: `Successfully checked in at ${site.name}!`,
+            activityId, // Return the activity ID for linking to schedule
           };
         } else {
           return {

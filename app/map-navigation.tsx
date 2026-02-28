@@ -7,21 +7,21 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
-  Alert,
   Linking,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { SITES } from '../lib/data/sites';
+import SiteMapWidget from './components/maps/SiteMapWidget';
 import { calculateDistance, formatDistance } from '../lib/utils/location';
 import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
 import { M3Typography } from '../lib/design/tokens';
+import M3ErrorDialog from './components/M3ErrorDialog';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -34,7 +34,6 @@ export default function MapNavigationScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const colors = useMaterialYouColors();
-  const mapRef = useRef<MapView>(null);
 
   const siteId = params.siteId as string;
   const site = SITES.find((s) => s.id === siteId);
@@ -42,10 +41,21 @@ export default function MapNavigationScreen() {
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [loading, setLoading] = useState(true);
   const [distance, setDistance] = useState<number | null>(null);
-  const [heading, setHeading] = useState<number>(0);
-  const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinate[]>([]);
   const [estimatedTime, setEstimatedTime] = useState<string>('--');
-  const [isTracking, setIsTracking] = useState(true);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'info';
+    onConfirm?: () => void;
+    showMapOptions?: boolean;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+    showMapOptions: false,
+  });
 
   const slideAnim = useRef(new Animated.Value(0)).current;
 
@@ -62,7 +72,12 @@ export default function MapNavigationScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Location permission is needed for navigation.');
+        setDialogConfig({
+          visible: true,
+          title: 'Permission Required',
+          message: 'Location permission is needed for navigation.',
+          type: 'error',
+        });
         setLoading(false);
         return;
       }
@@ -81,38 +96,6 @@ export default function MapNavigationScreen() {
         );
         setDistance(dist);
         calculateETA(dist);
-
-        // Create a simple straight line route (in production, use Google Directions API)
-        setRouteCoordinates([
-          {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          },
-          {
-            latitude: site.location.lat,
-            longitude: site.location.lng,
-          },
-        ]);
-
-        // Fit map to show both markers
-        setTimeout(() => {
-          mapRef.current?.fitToCoordinates(
-            [
-              {
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              },
-              {
-                latitude: site.location.lat,
-                longitude: site.location.lng,
-              },
-            ],
-            {
-              edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
-              animated: true,
-            }
-          );
-        }, 500);
       }
 
       setLoading(false);
@@ -136,16 +119,18 @@ export default function MapNavigationScreen() {
             setDistance(newDist);
             calculateETA(newDist);
           }
-          if (newLocation.coords.heading) {
-            setHeading(newLocation.coords.heading);
-          }
         }
       );
 
       return () => subscription.remove();
     } catch (error) {
       console.error('Error initializing location:', error);
-      Alert.alert('Error', 'Failed to get your location. Please try again.');
+      setDialogConfig({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to get your location. Please try again.',
+        type: 'error',
+      });
       setLoading(false);
     }
   };
@@ -169,53 +154,30 @@ export default function MapNavigationScreen() {
   };
 
   const handleRecenterMap = () => {
-    if (userLocation && site) {
-      mapRef.current?.fitToCoordinates(
-        [
-          {
-            latitude: userLocation.coords.latitude,
-            longitude: userLocation.coords.longitude,
-          },
-          {
-            latitude: site.location.lat,
-            longitude: site.location.lng,
-          },
-        ],
-        {
-          edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
-          animated: true,
-        }
-      );
-    }
+    // Map recenter functionality removed - placeholder for future native map integration
+    setDialogConfig({
+      visible: true,
+      title: 'Info',
+      message: 'Map recentering will be available when native maps are enabled',
+      type: 'info',
+    });
   };
 
   const handleOpenExternalNav = () => {
     if (!site) return;
 
-    Alert.alert('Open in Maps', 'Choose your navigation app:', [
-      {
-        text: 'Cancel',
-        style: 'cancel',
-      },
-      {
-        text: Platform.OS === 'ios' ? 'Apple Maps' : 'Google Maps',
-        onPress: () => {
-          const label = encodeURIComponent(site.name);
-          const url =
-            Platform.OS === 'ios'
-              ? `maps://app?daddr=${site.location.lat},${site.location.lng}`
-              : `geo:0,0?q=${site.location.lat},${site.location.lng}(${label})`;
-          Linking.openURL(url);
-        },
-      },
-      {
-        text: 'Google Maps (Web)',
-        onPress: () => {
-          const url = `https://www.google.com/maps/dir/?api=1&destination=${site.location.lat},${site.location.lng}`;
-          Linking.openURL(url);
-        },
-      },
-    ]);
+    // Open directly in the default maps app for the platform
+    const label = encodeURIComponent(site.name);
+    const url =
+      Platform.OS === 'ios'
+        ? `maps://app?daddr=${site.location.lat},${site.location.lng}`
+        : `geo:0,0?q=${site.location.lat},${site.location.lng}(${label})`;
+    
+    Linking.openURL(url).catch(() => {
+      // Fallback to Google Maps web
+      const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${site.location.lat},${site.location.lng}`;
+      Linking.openURL(webUrl);
+    });
   };
 
   if (!site) {
@@ -245,52 +207,16 @@ export default function MapNavigationScreen() {
           </Text>
         </View>
       ) : (
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          provider={PROVIDER_GOOGLE}
-          showsUserLocation
-          showsMyLocationButton={false}
-          showsCompass
-          followsUserLocation={isTracking}
-          rotateEnabled
-          pitchEnabled
-          toolbarEnabled={false}
-          initialRegion={
-            userLocation
-              ? {
-                  latitude: userLocation.coords.latitude,
-                  longitude: userLocation.coords.longitude,
-                  latitudeDelta: 0.05,
-                  longitudeDelta: 0.05,
-                }
-              : undefined
-          }
-        >
-          {/* Destination Marker */}
-          <Marker
-            coordinate={{
-              latitude: site.location.lat,
-              longitude: site.location.lng,
-            }}
-            title={site.name}
-            description={site.capacity}
-          >
-            <View style={[styles.destinationMarker, { backgroundColor: colors.primary }]}>
-              <MaterialCommunityIcons name="solar-panel" size={24} color={colors.onPrimary} />
-            </View>
-          </Marker>
-
-          {/* Route Line */}
-          {routeCoordinates.length > 0 && (
-            <Polyline
-              coordinates={routeCoordinates}
-              strokeColor={colors.primary}
-              strokeWidth={4}
-              lineDashPattern={[10, 5]}
-            />
-          )}
-        </MapView>
+        <View style={styles.mapContainer}>
+          <SiteMapWidget
+            location={site.location}
+            siteName={site.name}
+            subtitle={`${site.capacity} • ${distance ? formatDistance(distance) : '--'}`}
+            radiusMeters={500}
+            height={SCREEN_HEIGHT}
+            showCoordinates
+          />
+        </View>
       )}
 
       {/* Top Header */}
@@ -406,6 +332,16 @@ export default function MapNavigationScreen() {
           <MaterialCommunityIcons name="crosshairs-gps" size={24} color={colors.primary} />
         </TouchableOpacity>
       </View>
+
+      {/* Error/Info Dialog */}
+      <M3ErrorDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        onDismiss={() => setDialogConfig({ ...dialogConfig, visible: false })}
+        onConfirm={dialogConfig.onConfirm}
+      />
     </View>
   );
 }
@@ -414,7 +350,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  map: {
+  mapContainer: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
   },
@@ -594,18 +530,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 6,
-    elevation: 5,
-  },
-  destinationMarker: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
     elevation: 5,
   },
 });

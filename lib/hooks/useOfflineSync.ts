@@ -160,16 +160,28 @@ export const useOfflineSync = () => {
 
   /**
    * Auto-sync when coming back online (background only)
+   * Runs every 10 minutes if there's unsynced data
    */
   useEffect(() => {
     if (isOnline && unsyncedCount > 0 && !isSyncing) {
-      // Auto-sync silently with a small delay to ensure stable connection
-      const timer = setTimeout(() => {
+      // Initial sync with delay to ensure stable connection
+      const initialTimer = setTimeout(() => {
         console.log('Auto-syncing in background due to connection restored...');
         syncDataSilently();
       }, 2000);
 
-      return () => clearTimeout(timer);
+      // Set up periodic sync every 10 minutes
+      const syncInterval = setInterval(() => {
+        if (isOnline && unsyncedCount > 0 && !isSyncing) {
+          console.log('Periodic auto-sync (10-minute interval)...');
+          syncDataSilently();
+        }
+      }, 10 * 60 * 1000); // 10 minutes in milliseconds
+
+      return () => {
+        clearTimeout(initialTimer);
+        clearInterval(syncInterval);
+      };
     }
   }, [isOnline, unsyncedCount, isSyncing, syncDataSilently]);
 

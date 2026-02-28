@@ -1,61 +1,197 @@
 /**
- * Add Visit/Schedule Screen
+ * Add Visit/Schedule Screen (COMPLETE REWRITE)
  *
- * Form for scheduling new site visits with date/time pickers.
- * Uses Material You theming and modal presentation.
+ * Features:
+ * - M3Expressive custom date/time pickers
+ * - Other Reasons visit support (visits not linked to a specific site)
+ * - Form state preservation with AsyncStorage
+ * - Schedule conflict validation with 5-minute buffer
+ * - "Add New Site" button in site picker
+ * - Material You theming throughout
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Modal,
   FlatList,
 } from 'react-native';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useScheduleManagement } from '../lib/hooks/useScheduleManagement';
 import { useSiteManagement } from '../lib/hooks/useSiteManagement';
+import { validateSchedule } from '../lib/utils/scheduleValidation';
 import { Site } from '../lib/types';
 import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
+import { M3Typography, M3Shape, M3Spacing } from '../lib/design/tokens';
+import M3DatePicker from './components/M3DatePicker';
+import M3TimePicker from './components/M3TimePicker';
+import M3ErrorDialog from './components/M3ErrorDialog';
+
+const FORM_DRAFT_KEY = '@add_visit_draft';
+
+interface FormDraft {
+  visitTitle: string;
+  selectedSiteId: string;
+  visitDate: string;
+  visitTime: string;
+  isOtherReason: boolean;
+  otherReasonDescription: string;
+  linkedSiteId: string;
+}
 
 export default function AddVisitScreen() {
   const { scheduleVisit } = useScheduleManagement();
   const { allSites } = useSiteManagement();
   const colors = useMaterialYouColors();
+  const { returnFrom } = useLocalSearchParams<{ returnFrom?: string }>();
 
   // Form state
   const [visitTitle, setVisitTitle] = useState('');
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [visitDate, setVisitDate] = useState(new Date());
   const [visitTime, setVisitTime] = useState(new Date());
+  const [isOtherReason, setIsOtherReason] = useState(false);
+  const [otherReasonDescription, setOtherReasonDescription] = useState('');
+  const [linkedSiteId, setLinkedSiteId] = useState('');
+
+  // UI state
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showSitePicker, setShowSitePicker] = useState(false);
+  const [showLinkedSitePicker, setShowLinkedSitePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
 
-  const handleDateChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (event.type === 'set' && selectedDate) {
-      setVisitDate(selectedDate);
+  // Error dialog state
+  const [errorDialog, setErrorDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'warning' | 'info' | 'success';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'error',
+  });
+
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Save form draft (debounced)
+  const saveDraft = useCallback(async () => {
+    try {
+      const draft: FormDraft = {
+        visitTitle,
+        selectedSiteId,
+        visitDate: visitDate.toISOString(),
+        visitTime: visitTime.toISOString(),
+        isOtherReason,
+        otherReasonDescription,
+        linkedSiteId,
+      };
+      await AsyncStorage.setItem(FORM_DRAFT_KEY, JSON.stringify(draft));
+      console.log('📝 Draft saved');
+    } catch (error) {
+      console.error('Failed to save draft:', error);
     }
+  }, [visitTitle, selectedSiteId, visitDate, visitTime, isOtherReason, otherReasonDescription, linkedSiteId]);
+
+  // Debounced save (500ms)
+  useEffect(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      saveDraft();
+    }, 500);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [saveDraft]);
+
+  // Load draft on mount
+  useEffect(() => {
+    loadDraft();
   }, []);
 
-  const handleTimeChange = useCallback((event: DateTimePickerEvent, selectedTime?: Date) => {
-    setShowTimePicker(Platform.OS === 'ios');
-    if (event.type === 'set' && selectedTime) {
-      setVisitTime(selectedTime);
+  // Handle return from add-site screen
+  useEffect(() => {
+    if (returnFrom === 'add-site') {
+      loadDraft();
+      // Auto-select the most recently created site
+      if (allSites.length > 0) {
+        const latestSite = allSites.sort((a, b) => {
+          const aCreated = new Date(a.createdAt || 0).getTime();
+          const bCreated = new Date(b.createdAt || 0).getTime();
+          return bCreated - aCreated;
+        })[0];
+        setSelectedSiteId(latestSite.id);
+      }
+      // Clear draft after successful return
+      clearDraft();
     }
-  }, []);
+  }, [returnFrom, allSites]);
+
+  const loadDraft = async () => {
+    try {
+      const draftStr = await AsyncStorage.getItem(FORM_DRAFT_KEY);
+      if (draftStr) {
+        const draft: FormDraft = JSON.parse(draftStr);
+        setVisitTitle(draft.visitTitle);
+        setSelectedSiteId(draft.selectedSiteId);
+        setVisitDate(new Date(draft.visitDate));
+        setVisitTime(new Date(draft.visitTime));
+        setIsOtherReason(draft.isOtherReason);
+        setOtherReasonDescription(draft.otherReasonDescription);
+        setLinkedSiteId(draft.linkedSiteId);
+      }
+    } catch (error) {
+      console.error('Error loading draft:', error);
+    }
+  };
+
+  const clearDraft = async () => {
+    try {
+      await AsyncStorage.removeItem(FORM_DRAFT_KEY);
+    } catch (error) {
+      console.error('Error clearing draft:', error);
+    }
+  };
+
+  // Validate schedule conflicts
+  const checkConflicts = useCallback(async () => {
+    try {
+      const dateStr = formatDate(visitDate);
+      const timeStr = formatTime(visitTime);
+      
+      const conflict = await validateSchedule('user_1', dateStr, timeStr);
+      
+      if (conflict.hasConflict) {
+        setConflictWarning(conflict.reason || 'Schedule conflict detected');
+      } else {
+        setConflictWarning(null);
+      }
+    } catch (error) {
+      console.error('Error checking conflicts:', error);
+    }
+  }, [visitDate, visitTime]);
+
+  useEffect(() => {
+    checkConflicts();
+  }, [checkConflicts]);
 
   const formatDate = (date: Date): string => {
     const year = date.getFullYear();
@@ -87,19 +223,58 @@ export default function AddVisitScreen() {
     return site?.name || 'Unknown Site';
   }, [selectedSiteId, allSites]);
 
+  const getLinkedSiteName = useCallback((): string => {
+    if (!linkedSiteId) return 'Select site (optional)...';
+    const site = allSites.find((s) => s.id === linkedSiteId);
+    return site?.name || 'Unknown Site';
+  }, [linkedSiteId, allSites]);
+
   const handleSiteSelect = useCallback((siteId: string) => {
     setSelectedSiteId(siteId);
     setShowSitePicker(false);
   }, []);
 
-  const handleSubmit = useCallback(() => {
+  const handleLinkedSiteSelect = useCallback((siteId: string) => {
+    setLinkedSiteId(siteId);
+    setShowLinkedSitePicker(false);
+  }, []);
+
+  const handleAddNewSite = async () => {
+    // Save current form state
+    await saveDraft();
+    // Navigate to add-site with return parameter
+    router.push('/add-site?returnTo=add-visit' as any);
+  };
+
+  const handleSubmit = useCallback(async () => {
+    // Validation
     if (!visitTitle.trim()) {
-      Alert.alert('Validation Error', 'Please enter a visit title.');
+      setErrorDialog({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please enter a visit title.',
+        type: 'error',
+      });
       return;
     }
 
-    if (!selectedSiteId) {
-      Alert.alert('Validation Error', 'Please select a site.');
+    if (!isOtherReason && !selectedSiteId) {
+      setErrorDialog({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please select a site for this visit.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (isOtherReason && !otherReasonDescription.trim()) {
+      setErrorDialog({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Please provide a description for this visit.',
+        type: 'error',
+      });
       return;
     }
 
@@ -109,7 +284,12 @@ export default function AddVisitScreen() {
     selectedDate.setHours(0, 0, 0, 0);
 
     if (selectedDate < today) {
-      Alert.alert('Validation Error', 'Cannot schedule visits in the past.');
+      setErrorDialog({
+        visible: true,
+        title: 'Validation Error',
+        message: 'Cannot schedule visits in the past.',
+        type: 'error',
+      });
       return;
     }
 
@@ -121,26 +301,53 @@ export default function AddVisitScreen() {
 
       scheduleVisit(
         {
-          siteId: selectedSiteId,
+          siteId: isOtherReason ? '' : selectedSiteId,
           title: visitTitle.trim(),
           date: formatDate(visitDate),
           time: formatTime(visitTime),
+          isRequiem: isOtherReason,
+          requiemReason: isOtherReason ? otherReasonDescription.trim() : undefined,
+          linkedSiteId: isOtherReason && linkedSiteId ? linkedSiteId : undefined,
         },
         siteName
       );
 
-      Alert.alert('Success', `Visit "${visitTitle}" has been scheduled successfully!`, [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
-        },
-      ]);
+      // Clear draft on success
+      await clearDraft();
+
+      setErrorDialog({
+        visible: true,
+        title: 'Success',
+        message: `Visit "${visitTitle}" has been scheduled successfully!`,
+        type: 'success',
+      });
+
+      // Navigate back after showing success
+      setTimeout(() => {
+        router.back();
+      }, 1500);
     } catch (error) {
       console.error('Error scheduling visit:', error);
-      Alert.alert('Error', 'Failed to schedule visit. Please try again.');
+      setErrorDialog({
+        visible: true,
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'Failed to schedule visit. Please try again.',
+        type: 'error',
+      });
       setIsSubmitting(false);
     }
-  }, [visitTitle, selectedSiteId, visitDate, visitTime, allSites, scheduleVisit]);
+  }, [
+    visitTitle,
+    selectedSiteId,
+    visitDate,
+    visitTime,
+    isOtherReason,
+    otherReasonDescription,
+    linkedSiteId,
+    allSites,
+    scheduleVisit,
+    clearDraft,
+  ]);
 
   const renderSiteItem = ({ item }: { item: Site }) => (
     <TouchableOpacity
@@ -158,6 +365,27 @@ export default function AddVisitScreen() {
         </View>
       </View>
       {selectedSiteId === item.id && (
+        <MaterialCommunityIcons name="check-circle" size={24} color={colors.primary} />
+      )}
+    </TouchableOpacity>
+  );
+
+  const renderLinkedSiteItem = ({ item }: { item: Site }) => (
+    <TouchableOpacity
+      style={[styles.siteItem, { borderBottomColor: colors.surfaceContainerLow }]}
+      onPress={() => handleLinkedSiteSelect(item.id)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.siteItemContent}>
+        <MaterialCommunityIcons name="map-marker" size={24} color={colors.primary} />
+        <View style={styles.siteItemText}>
+          <Text style={[styles.siteItemName, { color: colors.onSurface }]}>{item.name}</Text>
+          <Text style={[styles.siteItemCapacity, { color: colors.onSurfaceVariant }]}>
+            {item.capacity}
+          </Text>
+        </View>
+      </View>
+      {linkedSiteId === item.id && (
         <MaterialCommunityIcons name="check-circle" size={24} color={colors.primary} />
       )}
     </TouchableOpacity>
@@ -185,6 +413,7 @@ export default function AddVisitScreen() {
           <View style={[styles.formSection, { backgroundColor: colors.surfaceContainer }]}>
             <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Visit Details</Text>
 
+            {/* Visit Title */}
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Visit Title *</Text>
               <TextInput
@@ -203,31 +432,115 @@ export default function AddVisitScreen() {
               />
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Site *</Text>
-              <TouchableOpacity
-                style={[
-                  styles.dateTimeButton,
-                  {
-                    borderColor: colors.outline,
-                    backgroundColor: colors.surface,
-                  },
-                ]}
-                onPress={() => setShowSitePicker(true)}
-              >
-                <MaterialCommunityIcons name="map-marker" size={20} color={colors.primary} />
-                <Text
-                  style={[
-                    styles.dateTimeText,
-                    { color: selectedSiteId ? colors.onSurface : colors.onSurfaceVariant },
-                  ]}
-                >
-                  {getSelectedSiteName()}
-                </Text>
-                <MaterialCommunityIcons name="chevron-down" size={20} color={colors.outline} />
-              </TouchableOpacity>
-            </View>
+            {/* Other Reasons Toggle */}
+            <TouchableOpacity
+              style={[
+                styles.checkboxContainer,
+                { backgroundColor: colors.surfaceContainerHighest },
+              ]}
+              onPress={() => {
+                setIsOtherReason(!isOtherReason);
+                if (!isOtherReason) {
+                  setSelectedSiteId('');
+                } else {
+                  setOtherReasonDescription('');
+                  setLinkedSiteId('');
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name={isOtherReason ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                size={24}
+                color={isOtherReason ? colors.primary : colors.outline}
+              />
+              <Text style={[styles.checkboxLabel, { color: colors.onSurface }]}>
+                Other Reasons (Not site-specific)
+              </Text>
+            </TouchableOpacity>
 
+            {/* Conditional: Regular Site Visit */}
+            {!isOtherReason && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Site *</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.dateTimeButton,
+                    {
+                      borderColor: colors.outline,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                  onPress={() => setShowSitePicker(true)}
+                >
+                  <MaterialCommunityIcons name="map-marker" size={20} color={colors.primary} />
+                  <Text
+                    style={[
+                      styles.dateTimeText,
+                      { color: selectedSiteId ? colors.onSurface : colors.onSurfaceVariant },
+                    ]}
+                  >
+                    {getSelectedSiteName()}
+                  </Text>
+                  <MaterialCommunityIcons name="chevron-down" size={20} color={colors.outline} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Conditional: Other Reasons Visit Fields */}
+            {isOtherReason && (
+              <>
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Description *</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.textArea,
+                      {
+                        borderColor: colors.outline,
+                        color: colors.onSurface,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                    placeholder="e.g., Equipment malfunction, emergency repair..."
+                    value={otherReasonDescription}
+                    onChangeText={setOtherReasonDescription}
+                    placeholderTextColor={colors.onSurfaceVariant}
+                    multiline
+                    numberOfLines={3}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>
+                    Linked Site (optional)
+                  </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.dateTimeButton,
+                      {
+                        borderColor: colors.outline,
+                        backgroundColor: colors.surface,
+                      },
+                    ]}
+                    onPress={() => setShowLinkedSitePicker(true)}
+                  >
+                    <MaterialCommunityIcons name="link" size={20} color={colors.primary} />
+                    <Text
+                      style={[
+                        styles.dateTimeText,
+                        { color: linkedSiteId ? colors.onSurface : colors.onSurfaceVariant },
+                      ]}
+                    >
+                      {getLinkedSiteName()}
+                    </Text>
+                    <MaterialCommunityIcons name="chevron-down" size={20} color={colors.outline} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {/* Date Picker */}
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Date *</Text>
               <TouchableOpacity
@@ -248,6 +561,7 @@ export default function AddVisitScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Time Picker */}
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>Time *</Text>
               <TouchableOpacity
@@ -269,15 +583,28 @@ export default function AddVisitScreen() {
             </View>
           </View>
 
+          {/* Conflict Warning */}
+          {conflictWarning && (
+            <View style={[styles.warningBox, { backgroundColor: colors.errorContainer }]}>
+              <MaterialCommunityIcons name="alert" size={20} color={colors.error} />
+              <Text style={[styles.warningText, { color: colors.onErrorContainer }]}>
+                {conflictWarning}
+              </Text>
+            </View>
+          )}
+
+          {/* Info Box */}
           <View style={[styles.infoBox, { backgroundColor: colors.primaryContainer }]}>
             <MaterialCommunityIcons name="information" size={20} color={colors.primary} />
             <Text style={[styles.infoText, { color: colors.onPrimaryContainer }]}>
-              This visit will be added to your schedule. You can sync it to your device calendar
-              from the Schedule screen.
+              {isOtherReason
+                ? 'Other Reasons visits are not linked to a specific site. You can optionally link a site for context.'
+                : 'This visit will be added to your schedule. You can sync it to your device calendar from the Schedule screen.'}
             </Text>
           </View>
         </ScrollView>
 
+        {/* Site Picker Modal */}
         <Modal
           visible={showSitePicker}
           animationType="slide"
@@ -292,6 +619,19 @@ export default function AddVisitScreen() {
                   <MaterialCommunityIcons name="close" size={24} color={colors.outline} />
                 </TouchableOpacity>
               </View>
+              
+              {/* Add New Site Button */}
+              <TouchableOpacity
+                style={[styles.addNewSiteButton, { backgroundColor: colors.primaryContainer }]}
+                onPress={handleAddNewSite}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons name="plus-circle" size={24} color={colors.primary} />
+                <Text style={[styles.addNewSiteText, { color: colors.onPrimaryContainer }]}>
+                  Add New Site
+                </Text>
+              </TouchableOpacity>
+
               <FlatList
                 data={allSites}
                 renderItem={renderSiteItem}
@@ -302,25 +642,60 @@ export default function AddVisitScreen() {
           </View>
         </Modal>
 
-        {showDatePicker && (
-          <DateTimePicker
-            value={visitDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleDateChange}
-            minimumDate={new Date()}
-          />
-        )}
+        {/* Linked Site Picker Modal */}
+        <Modal
+          visible={showLinkedSitePicker}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowLinkedSitePicker(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <View style={[styles.modalHeader, { borderBottomColor: colors.outlineVariant }]}>
+                <Text style={[styles.modalTitle, { color: colors.onSurface }]}>
+                  Select Linked Site
+                </Text>
+                <TouchableOpacity onPress={() => setShowLinkedSitePicker(false)}>
+                  <MaterialCommunityIcons name="close" size={24} color={colors.outline} />
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={allSites}
+                renderItem={renderLinkedSiteItem}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.siteList}
+              />
+            </View>
+          </View>
+        </Modal>
 
-        {showTimePicker && (
-          <DateTimePicker
-            value={visitTime}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleTimeChange}
-          />
-        )}
+        {/* M3 Date Picker */}
+        <M3DatePicker
+          visible={showDatePicker}
+          selectedDate={visitDate}
+          onSelect={(date) => setVisitDate(date)}
+          onDismiss={() => setShowDatePicker(false)}
+          minimumDate={new Date()}
+        />
 
+        {/* M3 Time Picker */}
+        <M3TimePicker
+          visible={showTimePicker}
+          selectedTime={visitTime}
+          onSelect={(time) => setVisitTime(time)}
+          onDismiss={() => setShowTimePicker(false)}
+        />
+
+        {/* M3 Error Dialog */}
+        <M3ErrorDialog
+          visible={errorDialog.visible}
+          type={errorDialog.type}
+          title={errorDialog.title}
+          message={errorDialog.message}
+          onDismiss={() => setErrorDialog({ ...errorDialog, visible: false })}
+        />
+
+        {/* Footer */}
         <View
           style={[
             styles.footer,
@@ -359,56 +734,85 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   formSection: {
-    padding: 20,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 16,
-    marginBottom: 12,
+    padding: M3Spacing.xl,
+    marginHorizontal: M3Spacing.lg,
+    marginTop: M3Spacing.lg,
+    borderRadius: M3Shape.extraLarge,
+    marginBottom: M3Spacing.md,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    marginBottom: 20,
+    ...M3Typography.title.large,
+    fontWeight: '600',
+    marginBottom: M3Spacing.xl,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: M3Spacing.xl,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
+    ...M3Typography.label.large,
+    fontWeight: '600',
+    marginBottom: M3Spacing.sm,
   },
   input: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
+    borderRadius: M3Shape.medium,
+    paddingHorizontal: M3Spacing.lg,
+    paddingVertical: M3Spacing.md,
+    ...M3Typography.body.large,
+  },
+  textArea: {
+    height: 100,
+    paddingTop: M3Spacing.md,
+    textAlignVertical: 'top',
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: M3Spacing.lg,
+    borderRadius: M3Shape.medium,
+    marginBottom: M3Spacing.xl,
+  },
+  checkboxLabel: {
+    ...M3Typography.body.large,
+    marginLeft: M3Spacing.md,
   },
   dateTimeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
+    borderRadius: M3Shape.medium,
+    paddingHorizontal: M3Spacing.lg,
+    paddingVertical: M3Spacing.md,
+    gap: M3Spacing.md,
   },
   dateTimeText: {
     flex: 1,
-    fontSize: 16,
+    ...M3Typography.body.large,
+  },
+  warningBox: {
+    flexDirection: 'row',
+    marginHorizontal: M3Spacing.lg,
+    marginBottom: M3Spacing.md,
+    padding: M3Spacing.lg,
+    borderRadius: M3Shape.medium,
+    gap: M3Spacing.md,
+  },
+  warningText: {
+    flex: 1,
+    ...M3Typography.body.medium,
+    lineHeight: 20,
   },
   infoBox: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
+    marginHorizontal: M3Spacing.lg,
+    marginBottom: M3Spacing.lg,
+    padding: M3Spacing.lg,
+    borderRadius: M3Shape.medium,
+    gap: M3Spacing.md,
   },
   infoText: {
     flex: 1,
-    fontSize: 13,
+    ...M3Typography.body.medium,
     lineHeight: 20,
   },
   modalOverlay: {
@@ -417,63 +821,76 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: M3Shape.extraExtraLarge,
+    borderTopRightRadius: M3Shape.extraExtraLarge,
     maxHeight: '70%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: M3Spacing.xl,
     borderBottomWidth: 1,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '500',
+    ...M3Typography.title.large,
+    fontWeight: '600',
+  },
+  addNewSiteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: M3Spacing.lg,
+    padding: M3Spacing.lg,
+    borderRadius: M3Shape.medium,
+    gap: M3Spacing.sm,
+  },
+  addNewSiteText: {
+    ...M3Typography.label.large,
+    fontWeight: '600',
   },
   siteList: {
-    paddingVertical: 8,
+    paddingVertical: M3Spacing.sm,
   },
   siteItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingVertical: M3Spacing.lg,
+    paddingHorizontal: M3Spacing.xl,
     borderBottomWidth: 1,
   },
   siteItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 12,
+    gap: M3Spacing.md,
   },
   siteItemText: {
     flex: 1,
   },
   siteItemName: {
-    fontSize: 16,
-    fontWeight: '500',
+    ...M3Typography.body.large,
+    fontWeight: '600',
     marginBottom: 2,
   },
   siteItemCapacity: {
-    fontSize: 14,
+    ...M3Typography.body.medium,
   },
   footer: {
-    padding: 16,
+    padding: M3Spacing.lg,
     borderTopWidth: 1,
   },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 16,
-    gap: 8,
+    paddingVertical: M3Spacing.lg,
+    borderRadius: M3Shape.extraLarge,
+    gap: M3Spacing.sm,
   },
   submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...M3Typography.label.large,
+    fontWeight: '700',
   },
 });

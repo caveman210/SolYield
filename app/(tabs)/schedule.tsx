@@ -12,6 +12,7 @@ import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
 import { useScheduleManagement } from '../../lib/hooks/useScheduleManagement';
 import { useSiteManagement } from '../../lib/hooks/useSiteManagement';
 import StyledText from '../components/StyledText';
+import M3ErrorDialog from '../components/M3ErrorDialog';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -20,8 +21,20 @@ export default function ScheduleScreen() {
   const colors = useMaterialYouColors();
   const insets = useSafeAreaInsets();
   const [syncing, setSyncing] = useState(false);
-  const { allVisits } = useScheduleManagement();
+  const { allVisits, removeVisit, canModifyVisit } = useScheduleManagement();
   const { allSites } = useSiteManagement();
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'info';
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   const handleSyncCalendar = async () => {
     setSyncing(true);
@@ -33,6 +46,35 @@ export default function ScheduleScreen() {
     } else {
       setSyncing(false);
     }
+  };
+
+  const handleDeleteVisit = (visit: ScheduleVisit) => {
+    const site = allSites.find((s) => s.id === visit.siteId);
+    
+    setDialogConfig({
+      visible: true,
+      title: 'Delete Visit?',
+      message: `Are you sure you want to delete "${visit.title}"${site ? ` at ${site.name}` : ''}? This action cannot be undone.`,
+      type: 'error',
+      onConfirm: async () => {
+        const success = await removeVisit(visit.id, visit.title);
+        if (success) {
+          setDialogConfig({
+            visible: true,
+            title: 'Success',
+            message: 'Visit deleted successfully',
+            type: 'success',
+          });
+        } else {
+          setDialogConfig({
+            visible: true,
+            title: 'Error',
+            message: 'Could not delete this visit. Only user-created visits can be deleted.',
+            type: 'error',
+          });
+        }
+      },
+    });
   };
 
   const getDateLabel = (date: string) => {
@@ -54,6 +96,7 @@ export default function ScheduleScreen() {
   const renderVisit = ({ item, index }: { item: ScheduleVisit; index: number }) => {
     const site = allSites.find((s) => s.id === item.siteId);
     const badgeStyle = getDateBadgeStyle(item.date);
+    const isUserCreated = canModifyVisit(item.id);
 
     return (
       <AnimatedTouchableOpacity
@@ -69,15 +112,26 @@ export default function ScheduleScreen() {
         activeOpacity={0.7}
       >
         <View style={styles.visitContent}>
-          <View style={styles.dateSection}>
-            <View style={[styles.dateBadge, { backgroundColor: badgeStyle.backgroundColor }]}>
-              <StyledText style={[styles.dateBadgeText, { color: badgeStyle.color }]}>
-                {getDateLabel(item.date)}
+          <View style={styles.cardHeader}>
+            <View style={styles.dateSection}>
+              <View style={[styles.dateBadge, { backgroundColor: badgeStyle.backgroundColor }]}>
+                <StyledText style={[styles.dateBadgeText, { color: badgeStyle.color }]}>
+                  {getDateLabel(item.date)}
+                </StyledText>
+              </View>
+              <StyledText style={[styles.timeText, { color: colors.onSurfaceVariant }]}>
+                {item.time}
               </StyledText>
             </View>
-            <StyledText style={[styles.timeText, { color: colors.onSurfaceVariant }]}>
-              {item.time}
-            </StyledText>
+            {isUserCreated && (
+              <TouchableOpacity
+                onPress={() => handleDeleteVisit(item)}
+                style={[styles.deleteIconButton, { backgroundColor: colors.errorContainer }]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={18} color={colors.error} />
+              </TouchableOpacity>
+            )}
           </View>
           <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
           <View style={styles.visitDetails}>
@@ -233,6 +287,16 @@ export default function ScheduleScreen() {
           <MaterialCommunityIcons name="plus" size={28} color={colors.onPrimaryContainer} />
         </TouchableOpacity>
       </Animated.View>
+
+      {/* Error/Info Dialog */}
+      <M3ErrorDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        onDismiss={() => setDialogConfig({ ...dialogConfig, visible: false })}
+        onConfirm={dialogConfig.onConfirm}
+      />
     </View>
   );
 }
@@ -286,11 +350,16 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   visitContent: {
+    flexDirection: 'column',
+  },
+  cardHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   dateSection: {
     alignItems: 'center',
-    marginRight: 16,
     minWidth: 80,
   },
   dateBadge: {
@@ -306,13 +375,19 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 14,
   },
+  deleteIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   divider: {
-    width: 1,
-    marginRight: 16,
+    height: 1,
+    marginBottom: 12,
   },
   visitDetails: {
     flex: 1,
-    justifyContent: 'center',
   },
   visitTitle: {
     fontSize: 16,

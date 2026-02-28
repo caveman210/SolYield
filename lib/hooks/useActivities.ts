@@ -27,10 +27,21 @@ export const useActivities = () => {
 
   /**
    * Add a new activity to the feed
+   * Returns the generated activity ID for linking purposes
    */
   const addNewActivity = useCallback(
-    (activity: Omit<Activity, 'id' | 'timestamp' | 'synced'>) => {
-      dispatch(addActivity(activity));
+    (activity: Omit<Activity, 'id' | 'timestamp' | 'synced'>): string => {
+      const activityId = `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const fullActivity: Activity = {
+        ...activity,
+        id: activityId,
+        timestamp: Date.now(),
+        synced: false,
+      };
+      
+      dispatch(addActivity(fullActivity));
+      return activityId;
     },
     [dispatch]
   );

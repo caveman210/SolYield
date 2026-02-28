@@ -46,20 +46,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="inspection"
+        name="inspections"
         options={{
-          title: 'Inspection',
+          title: 'Inspections',
           tabBarIcon: ({ color }) => (
             <MaterialCommunityIcons name="clipboard-check" color={color} size={28} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="history"
-        options={{
-          title: 'History',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="file-document-multiple" color={color} size={28} />
           ),
         }}
       />

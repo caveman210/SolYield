@@ -16,9 +16,11 @@ import {
   useAnimatedMaterialYouColors,
   useMaterialYouColors,
 } from '../../lib/hooks/MaterialYouProvider';
-import { useRecentActivities } from '../../lib/hooks/useActivityManager';
 import { M3Typography, M3Shape, M3Elevation, M3Spacing, M3Motion } from '../../lib/design/tokens';
 import { Activity } from '../../lib/types';
+import { useOfflineSync } from '../../lib/hooks/useOfflineSync';
+import { useSites } from '../../lib/hooks/useSites';
+import { useDBActivities, useDBRecentActivities } from '../../lib/hooks/useDBActivities';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -36,12 +38,14 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const { activities: recentActivities } = useRecentActivities(3);
+  const { activities: recentActivities } = useDBRecentActivities(3);
+  const { activities: allActivities, inspectionCount } = useDBActivities();
+  const { totalCount: totalSites } = useSites();
+  const { unsyncedCount, isOnline } = useOfflineSync();
 
-  // TODO: Replace with actual data from Redux/API
-  const activeSitesCount = 12;
-  const performancePercentage = '92%';
-  const scheduledVisitsToday = 3;
+  // Calculate overall site summary data
+  const totalInspections = inspectionCount;
+  const scheduledVisitsToday = 3; // TODO: Calculate from schedule data
 
   const handleActivityPress = (activity: Activity) => {
     if (activity.siteId) {
@@ -84,9 +88,12 @@ export default function Dashboard() {
         <TouchableOpacity
           style={[styles.iconButton, { backgroundColor: colors.secondaryContainer }]}
           activeOpacity={0.7}
+          onPress={() => {
+            // TODO: Navigate to user profile
+          }}
         >
           <MaterialCommunityIcons
-            name="bell-outline"
+            name="account-circle-outline"
             size={24}
             color={colors.onSecondaryContainer}
           />
@@ -149,7 +156,7 @@ export default function Dashboard() {
 
         {/* Quick Stats Grid - INLINE Material You colors (like Overview) */}
         <View style={styles.statsGrid}>
-          {/* Active Sites Widget */}
+          {/* Total Sites Widget */}
           <AnimatedTouchable
             entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(200)}
             style={[
@@ -173,7 +180,7 @@ export default function Dashboard() {
                 marginTop: M3Spacing.md,
               }}
             >
-              {activeSitesCount}
+              {totalSites}
             </StyledText>
             <StyledText
               style={{
@@ -183,11 +190,11 @@ export default function Dashboard() {
                 marginTop: M3Spacing.xs,
               }}
             >
-              Active Sites
+              Total Sites
             </StyledText>
           </AnimatedTouchable>
 
-          {/* Performance Widget */}
+          {/* Total Inspections Widget */}
           <AnimatedTouchable
             entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(250)}
             style={[
@@ -198,10 +205,10 @@ export default function Dashboard() {
               },
             ]}
             activeOpacity={0.8}
-            onPress={() => router.push('/performance')}
+            onPress={() => router.push('/inspections')}
           >
             <View style={[styles.statIconContainer, { backgroundColor: colors.tertiary }]}>
-              <MaterialCommunityIcons name="chart-line" size={28} color={colors.onTertiary} />
+              <MaterialCommunityIcons name="clipboard-check" size={28} color={colors.onTertiary} />
             </View>
             <StyledText
               style={{
@@ -211,7 +218,7 @@ export default function Dashboard() {
                 marginTop: M3Spacing.md,
               }}
             >
-              {performancePercentage}
+              {totalInspections}
             </StyledText>
             <StyledText
               style={{
@@ -221,10 +228,55 @@ export default function Dashboard() {
                 marginTop: M3Spacing.xs,
               }}
             >
-              Performance
+              Inspections
             </StyledText>
           </AnimatedTouchable>
         </View>
+
+        {/* Sync Status Banner (show when offline OR when there are unsynced items) */}
+        {(!isOnline || unsyncedCount > 0) && (
+          <Animated.View
+            entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(300)}
+            style={[
+              styles.syncBanner,
+              {
+                backgroundColor: !isOnline ? colors.errorContainer : colors.secondaryContainer,
+                ...M3Elevation.level1,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={!isOnline ? "cloud-off-outline" : "cloud-sync"}
+              size={24}
+              color={!isOnline ? colors.onErrorContainer : colors.onSecondaryContainer}
+            />
+            <View style={{ flex: 1, marginLeft: M3Spacing.md }}>
+              <StyledText
+                style={{
+                  ...M3Typography.label.large,
+                  color: !isOnline ? colors.onErrorContainer : colors.onSecondaryContainer,
+                  fontWeight: '600',
+                }}
+              >
+                {!isOnline 
+                  ? 'Offline Mode' 
+                  : `${unsyncedCount} item${unsyncedCount > 1 ? 's' : ''} pending sync`}
+              </StyledText>
+              <StyledText
+                style={{
+                  ...M3Typography.body.small,
+                  color: !isOnline ? colors.onErrorContainer : colors.onSecondaryContainer,
+                  opacity: 0.8,
+                  marginTop: 2,
+                }}
+              >
+                {!isOnline
+                  ? 'Data will sync when connection is restored'
+                  : 'Syncing automatically every 10 minutes'}
+              </StyledText>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Recent Activity Section */}
         <Animated.View
@@ -302,7 +354,7 @@ export default function Dashboard() {
 
           <View style={styles.quickActionsGrid}>
             {[
-              { icon: 'plus-circle', label: 'New Inspection', route: '/inspection' },
+              { icon: 'plus-circle', label: 'New Inspection', route: '/inspection-form' },
               { icon: 'file-chart', label: 'View Reports', route: '/performance' },
               { icon: 'map-marker-path', label: 'Navigate to Site', route: '/sites' },
               { icon: 'calendar-plus', label: 'Schedule Visit', route: '/schedule' },
@@ -398,6 +450,13 @@ const styles = StyleSheet.create({
     borderRadius: M3Shape.medium,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: M3Spacing.lg,
+    borderRadius: M3Shape.large,
+    marginBottom: M3Spacing.xl,
   },
   section: {
     marginBottom: M3Spacing.xl,

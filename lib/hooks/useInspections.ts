@@ -98,32 +98,21 @@ export function useInspections() {
         );
 
         // Create activity entry
-        dispatch(
-          addActivity({
-            type: 'inspection',
-            title: 'Inspection Completed',
-            description: siteName
-              ? `Completed inspection at ${siteName}`
-              : 'Inspection form submitted',
-            siteId,
-            siteName,
-            icon: 'clipboard-check',
-          })
-        );
-
-        // Create activity entry
-        dispatch(
-          addActivity({
-            type: 'inspection',
-            title: 'Inspection Completed',
-            description: siteName
-              ? `Completed inspection at ${siteName}`
-              : 'Inspection form submitted',
-            siteId,
-            siteName,
-            icon: 'clipboard-check',
-          })
-        );
+        const activity = {
+          id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'inspection' as const,
+          title: 'Inspection Completed',
+          description: siteName
+            ? `Completed inspection at ${siteName}`
+            : 'Inspection form submitted',
+          siteId,
+          siteName,
+          icon: 'clipboard-check',
+          timestamp: Date.now(),
+          synced: false,
+        };
+        
+        dispatch(addActivity(activity));
 
         return { success: true, activityId };
       } catch (error) {

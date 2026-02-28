@@ -5,7 +5,6 @@ import {
   Image,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +17,7 @@ import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
 import Animated, { FadeInUp, FadeIn } from 'react-native-reanimated';
 import { useState } from 'react';
 import { FORM_SCHEMA } from '../../lib/data/formSchema';
+import M3ErrorDialog from '../components/M3ErrorDialog';
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 
@@ -29,6 +29,18 @@ export default function InspectionDetailScreen() {
     state.maintenance.forms.find((f) => f.id === id)
   );
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'success' | 'error' | 'info';
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   if (!form) {
     return (
@@ -68,39 +80,34 @@ export default function InspectionDetailScreen() {
   };
 
   const handleSync = () => {
-    Alert.alert(
-      'Sync Inspection',
-      'Mark this inspection as synced to the server?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sync',
-          onPress: () => {
-            dispatch(markSynced(form.id));
-            Alert.alert('Success', 'Inspection marked as synced');
-          },
-        },
-      ]
-    );
+    setDialogConfig({
+      visible: true,
+      title: 'Sync Inspection',
+      message: 'Mark this inspection as synced to the server?',
+      type: 'info',
+      onConfirm: () => {
+        dispatch(markSynced(form.id));
+        setDialogConfig({
+          visible: true,
+          title: 'Success',
+          message: 'Inspection marked as synced',
+          type: 'success',
+        });
+      },
+    });
   };
 
   const handleDelete = () => {
-    Alert.alert(
-      'Delete Inspection',
-      'Are you sure you want to delete this inspection? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            dispatch(deleteForm(form.id));
-            router.back();
-            Alert.alert('Deleted', 'Inspection has been deleted');
-          },
-        },
-      ]
-    );
+    setDialogConfig({
+      visible: true,
+      title: 'Delete Inspection',
+      message: 'Are you sure you want to delete this inspection? This action cannot be undone.',
+      type: 'error',
+      onConfirm: () => {
+        dispatch(deleteForm(form.id));
+        router.back();
+      },
+    });
   };
 
   const handleShare = async () => {
@@ -351,6 +358,16 @@ export default function InspectionDetailScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       )}
+
+      {/* Error/Info Dialog */}
+      <M3ErrorDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        onDismiss={() => setDialogConfig({ ...dialogConfig, visible: false })}
+        onConfirm={dialogConfig.onConfirm}
+      />
     </SafeAreaView>
   );
 }

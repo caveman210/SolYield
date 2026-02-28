@@ -1,145 +1,229 @@
 /**
  * useSiteManagement Hook
  * 
- * Provides site management operations (CRUD).
- * Integrates with Redux and combines static + user sites.
+ * Provides site management operations (CRUD) using WatermelonDB.
+ * Combines built-in sites with user-created sites.
  */
 
 import { useCallback } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import {
-  addSite,
-  updateSite,
-  deleteSite,
-  selectUserSites,
-  selectUserSiteById,
-} from '../../store/slices/siteSlice';
-import { addActivity } from '../../store/slices/activitySlice';
-import { Site } from '../types';
-import { SITES as STATIC_SITES } from '../data/sites';
+import { useDatabase } from '@nozbe/watermelondb/react';
+import { Q } from '@nozbe/watermelondb';
+import { getSitesCollection, getActivitiesCollection, database as db } from '../../database';
+import SiteModel from '../../database/models/Site';
+import { useSites } from './useSites';
+import { Site as LegacySite } from '../types';
 
 /**
- * Hook for managing sites (create, update, delete)
+ * Convert WatermelonDB Site model to legacy Site type for UI compatibility.
+ */
+function convertSiteModel(model: SiteModel): LegacySite {
+  return {
+    id: model.id,
+    name: model.name,
+    location: {
+      lat: model.latitude,
+      lng: model.longitude,
+    },
+    capacity: model.capacity,
+    createdAt: model.createdAt.getTime(),
+  };
+}
+
+/**
+ * Hook for managing sites (create, update, delete, query)
  */
 export const useSiteManagement = () => {
-  const dispatch = useDispatch();
-  const userSites = useSelector(selectUserSites);
+  const database = useDatabase();
+  const { sites, isLoading, totalCount, userCreatedCount, builtInCount } = useSites();
 
   /**
-   * Get all sites (static + user-created)
+   * Get all sites (built-in + user-created) converted to legacy format
    */
-  const getAllSites = useCallback((): Site[] => {
-    return [...STATIC_SITES, ...userSites];
-  }, [userSites]);
+  const getAllSites = useCallback((): LegacySite[] => {
+    return sites.map(convertSiteModel);
+  }, [sites]);
 
   /**
-   * Create a new site
+   * Get user-created sites only (converted to legacy format)
+   */
+  const getUserSites = useCallback((): LegacySite[] => {
+    return sites.filter((s) => s.isUserCreated).map(convertSiteModel);
+  }, [sites]);
+
+  /**
+   * Create a new user site in WatermelonDB
    */
   const createSite = useCallback(
-    (siteData: Omit<Site, 'id'>) => {
-      dispatch(addSite(siteData));
+    async (siteData: Omit<LegacySite, 'id'>) => {
+      try {
+        await db.write(async () => {
+          const sitesCollection = getSitesCollection();
+          const activitiesCollection = getActivitiesCollection();
 
-      // Add activity to feed
-      dispatch(
-        addActivity({
-          type: 'schedule',
-          title: 'New Site Added',
-          description: `Created site: ${siteData.name}`,
-          siteName: siteData.name,
-          icon: 'map-marker-plus',
-        })
-      );
+          // Create site
+          const newSite = await sitesCollection.create((site) => {
+            site.name = siteData.name;
+            site.latitude = siteData.location.lat;
+            site.longitude = siteData.location.lng;
+            site.capacity = siteData.capacity;
+            site.isUserCreated = true;
+            site.synced = false;
+          });
 
-      return true;
+          // Create activity log
+          await activitiesCollection.create((activity) => {
+            activity.type = 'inspection'; // Using 'inspection' as closest match
+            activity.title = 'New Site Added';
+            activity.description = `Created site: ${siteData.name}`;
+            activity.siteId = newSite.id;
+            activity.siteName = siteData.name;
+            activity.timestamp = Date.now();
+            activity.icon = 'map-marker-plus';
+            activity.metadata = JSON.stringify({});
+            activity.synced = false;
+          });
+        });
+
+        console.log(`✅ Site created: ${siteData.name}`);
+        return true;
+      } catch (error) {
+        console.error('Error creating site:', error);
+        throw error;
+      }
     },
-    [dispatch]
+    []
   );
 
   /**
-   * Update an existing user site
+   * Update an existing site
    */
   const editSite = useCallback(
-    (siteData: Site) => {
-      // Only allow editing user-created sites
-      const isUserSite = userSites.some((s) => s.id === siteData.id);
-      if (!isUserSite) {
-        console.warn('Cannot edit static sites');
-        return false;
+    async (siteData: LegacySite) => {
+      try {
+        // Only allow editing user-created sites
+        const site = sites.find((s) => s.id === siteData.id);
+        if (!site) {
+          console.warn('Site not found');
+          return false;
+        }
+
+        if (!site.isUserCreated) {
+          console.warn('Cannot edit built-in sites');
+          return false;
+        }
+
+        await db.write(async () => {
+          const activitiesCollection = getActivitiesCollection();
+
+          // Update site
+          await site.updateDetails({
+            name: siteData.name,
+            latitude: siteData.location.lat,
+            longitude: siteData.location.lng,
+            capacity: siteData.capacity,
+          });
+
+          // Create activity log
+          await activitiesCollection.create((activity) => {
+            activity.type = 'inspection';
+            activity.title = 'Site Updated';
+            activity.description = `Updated site: ${siteData.name}`;
+            activity.siteId = siteData.id;
+            activity.siteName = siteData.name;
+            activity.timestamp = Date.now();
+            activity.icon = 'map-marker-check';
+            activity.metadata = JSON.stringify({});
+            activity.synced = false;
+          });
+        });
+
+        console.log(`✅ Site updated: ${siteData.name}`);
+        return true;
+      } catch (error) {
+        console.error('Error updating site:', error);
+        throw error;
       }
-
-      dispatch(updateSite(siteData));
-
-      // Add activity to feed
-      dispatch(
-        addActivity({
-          type: 'schedule',
-          title: 'Site Updated',
-          description: `Updated site: ${siteData.name}`,
-          siteId: siteData.id,
-          siteName: siteData.name,
-          icon: 'map-marker-check',
-        })
-      );
-
-      return true;
     },
-    [dispatch, userSites]
+    [sites]
   );
 
   /**
-   * Delete a user site
+   * Delete a site
    */
   const removeSite = useCallback(
-    (siteId: string, siteName?: string) => {
-      // Only allow deleting user-created sites
-      const isUserSite = userSites.some((s) => s.id === siteId);
-      if (!isUserSite) {
-        console.warn('Cannot delete static sites');
-        return false;
+    async (siteId: string, siteName?: string) => {
+      try {
+        const site = sites.find((s) => s.id === siteId);
+        if (!site) {
+          console.warn('Site not found');
+          return false;
+        }
+
+        if (!site.isUserCreated) {
+          console.warn('Cannot delete built-in sites');
+          return false;
+        }
+
+        await db.write(async () => {
+          const activitiesCollection = getActivitiesCollection();
+
+          // Create activity log before deletion
+          await activitiesCollection.create((activity) => {
+            activity.type = 'inspection';
+            activity.title = 'Site Deleted';
+            activity.description = `Deleted site: ${siteName || site.name}`;
+            activity.siteId = '';
+            activity.siteName = siteName || site.name;
+            activity.timestamp = Date.now();
+            activity.icon = 'map-marker-remove';
+            activity.metadata = JSON.stringify({});
+            activity.synced = false;
+          });
+
+          // Delete site
+          await site.markAsDeleted();
+        });
+
+        console.log(`✅ Site deleted: ${siteName || site.name}`);
+        return true;
+      } catch (error) {
+        console.error('Error deleting site:', error);
+        throw error;
       }
-
-      dispatch(deleteSite(siteId));
-
-      // Add activity to feed
-      dispatch(
-        addActivity({
-          type: 'schedule',
-          title: 'Site Deleted',
-          description: `Deleted site: ${siteName || 'Unknown Site'}`,
-          icon: 'map-marker-remove',
-        })
-      );
-
-      return true;
     },
-    [dispatch, userSites]
+    [sites]
   );
 
   /**
-   * Check if a site can be edited/deleted
+   * Check if a site can be edited/deleted (must be user-created)
    */
   const canModifySite = useCallback(
     (siteId: string): boolean => {
-      return userSites.some((s) => s.id === siteId);
+      const site = sites.find((s) => s.id === siteId);
+      return site?.isUserCreated ?? false;
     },
-    [userSites]
+    [sites]
   );
 
   /**
-   * Get site by ID (checks both static and user sites)
+   * Get site by ID (converted to legacy format)
    */
   const getSiteById = useCallback(
-    (siteId: string): Site | undefined => {
-      const allSites = getAllSites();
-      return allSites.find((s) => s.id === siteId);
+    (siteId: string): LegacySite | undefined => {
+      const site = sites.find((s) => s.id === siteId);
+      return site ? convertSiteModel(site) : undefined;
     },
-    [getAllSites]
+    [sites]
   );
 
   return {
     // Data
-    userSites,
+    userSites: getUserSites(),
     allSites: getAllSites(),
+    isLoading,
+    totalCount,
+    userCreatedCount,
+    builtInCount,
 
     // Actions
     createSite,
