@@ -14,7 +14,7 @@ This project was developed as a comprehensive solution for the SolYield Mobile M
 | Language | TypeScript (Strict Mode) |
 | State Management | Redux Toolkit with Redux Persist |
 | Navigation | Expo Router (File-based routing) |
-| UI Framework | Material You + NativeWind (Tailwind CSS) |
+| UI Framework | Material 3 Expressive + Material You + NativeWind (Tailwind CSS) |
 | Offline Database | WatermelonDB |
 | Maps | Modular Map System (API-key-free with react-native-maps ready) |
 | Charts | react-native-gifted-charts |
