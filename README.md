@@ -70,15 +70,13 @@ The application follows strict modular architecture principles:
 │  - Models (Site, Schedule, Activity)   │
 │  - Observable Queries                   │
 └─────────────────────────────────────────┘
-```
-
-│ - Type Definitions │
+│ - Type Definitions                     │
 └─────────────────┬───────────────────────┘
-│ uses
+                  │ uses
 ┌─────────────────▼───────────────────────┐
-│ Data Layer (State) │
-│ - WatermelonDB │
-│ - Models (Site, Schedule, Activity) │
+│ Data Layer (State)                     │
+│ - WatermelonDB                         │
+│ - Models (Site, Schedule, Activity)    │
 └─────────────────────────────────────────┘
 
 ```
@@ -188,8 +186,6 @@ The app shows maps in two ways:
 - `app/components/maps/SiteMapWidget.tsx` - Wrapper component
 - `app/components/maps/NativeMapView.tsx` - Full map view
 - `app/map-navigation.tsx` - Turn-by-turn navigation screen
-
-```
 
 Benefits:
 
