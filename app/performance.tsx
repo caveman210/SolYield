@@ -1,7 +1,6 @@
 /**
  * Performance Analytics Screen
- * 
- * M3Expressive themed performance dashboard with:
+ * * M3Expressive themed performance dashboard with:
  * - Site dropdown selector (All Sites aggregate + individual sites)
  * - Aggregated data visualization for all sites combined
  * - Material You dynamic colors throughout
@@ -15,6 +14,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Animated as RNAnimated,
+  Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp, SlideInRight } from 'react-native-reanimated';
@@ -32,12 +32,6 @@ import { M3Typography, M3Shape, M3Elevation, M3Spacing, M3Motion } from '../lib/
 import { useSites } from '../lib/hooks/useSites';
 import { usePerformanceData } from '../lib/hooks/usePerformanceData';
 import { PERFORMANCE_DATA } from '../lib/data/performanceData';
-import {
-  calculateAverage,
-  calculatePeak,
-  calculateTotal,
-} from '../lib/utils/chartHelpers';
-import { formatDate } from '../lib/utils/dateFormatter';
 import { PDF_COLORS } from '../lib/design/staticColors';
 import { Site } from '../lib/types';
 
@@ -49,17 +43,21 @@ export default function PerformanceScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { sites, isLoading: sitesLoading } = useSites();
+  
+  // Consuming the newly structured weekly hooks
   const {
-    monthlyGroups,
+    weeklyGroups,
     isLoading: performanceLoading,
-    getStatsForMonth,
-    getChartDataForMonth,
+    getStatsForPeriod,
+    getChartDataForPeriod,
   } = usePerformanceData();
+
+  const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [showSiteSelector, setShowSiteSelector] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
-  const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
+  const [currentPeriodIndex, setCurrentPeriodIndex] = useState(0);
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
     title: string;
@@ -90,74 +88,71 @@ export default function PerformanceScreen() {
   const displayName = selectedSite ? selectedSite.name : 'All Sites Combined';
   const displayCapacity = selectedSite ? selectedSite.capacity : `${allSites.length} Sites`;
 
-  // Get current month data
-  const currentMonth = monthlyGroups[currentMonthIndex];
-  const dailyData = currentMonth ? getChartDataForMonth(currentMonthIndex, selectedSiteId) : [];
-  const stats = currentMonth ? getStatsForMonth(currentMonthIndex, selectedSiteId) : {
+  // Get current period (weekly) data
+  const currentPeriod = weeklyGroups[currentPeriodIndex];
+  const dailyData = currentPeriod ? getChartDataForPeriod(currentPeriodIndex, selectedSiteId) : [];
+  const stats = currentPeriod ? getStatsForPeriod(currentPeriodIndex, selectedSiteId) : {
     avgGeneration: 0,
     peakPower: 0,
     totalEnergy: 0,
     efficiency: 0,
   };
 
-  // Month navigation
-  const goToPreviousMonth = () => {
-    if (currentMonthIndex > 0) setCurrentMonthIndex(currentMonthIndex - 1);
+  // Period navigation
+  const goToPreviousPeriod = () => {
+    if (currentPeriodIndex > 0) setCurrentPeriodIndex(currentPeriodIndex - 1);
   };
 
-  const goToNextMonth = () => {
-    if (currentMonthIndex < monthlyGroups.length - 1) setCurrentMonthIndex(currentMonthIndex + 1);
+  const goToNextPeriod = () => {
+    if (currentPeriodIndex < weeklyGroups.length - 1) setCurrentPeriodIndex(currentPeriodIndex + 1);
   };
 
   // Bar chart data with Material You themed colors
   const barData = dailyData.map((day) => {
-    const date = new Date(day.date);
+    // Parse safely to avoid timezone shift
+    const parts = day.date.split('-');
+    const date = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    
+    // Create dual-line label: "Mon \n 17"
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
     const dayNum = date.getDate();
-    const value = day.value; // Already contains the aggregated value
+    const value = day.value;
 
-    // Dynamic color based on performance
     const maxExpected = 60;
     const ratio = value / maxExpected;
-    let color = colors.tertiary; // Default
-    if (ratio >= 0.8) color = colors.primary; // High performance
-    else if (ratio >= 0.5) color = colors.secondary; // Medium performance
-    else color = colors.error; // Low performance
+    let color = colors.tertiary; 
+    if (ratio >= 0.8) color = colors.primary; 
+    else if (ratio >= 0.5) color = colors.secondary; 
+    else color = colors.error; 
 
     return {
       value,
-      label: String(dayNum),
+      label: `${dayName}\n${dayNum}`,
       frontColor: color,
     };
   });
 
-  // Calculate chart dimensions
-  const barWidth = 32;
-  const spacing = 16;
-  const chartPadding = 60; // Left padding for Y-axis labels
-  const chartWidth = barData.length * (barWidth + spacing) + chartPadding;
+  // --- CHART SCALING & MATH LOGIC ---
+  const noOfSections = 4;
+  const rawMax = dailyData.length > 0 ? Math.max(...dailyData.map(d => d.value)) : 10;
+  
+  // Round the step to a clean multiple of 5 or 10
+  let step = Math.ceil(Math.max(rawMax, 10) / noOfSections);
+  step = Math.ceil(step / 5) * 5; 
+  const yAxisMax = step * noOfSections;
 
-  // Pie chart data with Material You colors
+  // Safe width calculation leaving room for the Y-Axis Labels
+  const safeChartWidth = SCREEN_WIDTH - (M3Spacing.lg * 2) - 60;
+
+  // Safe Pie Chart sizing
+  const pieRadius = Math.min(SCREEN_WIDTH * 0.25, 90);
+  const innerRadius = pieRadius * 0.65;
+
   const pieData = [
-    {
-      value: PERFORMANCE_DATA.overPerformingDays,
-      color: colors.primary,
-      label: 'Over',
-    },
-    {
-      value: PERFORMANCE_DATA.normalDays,
-      color: colors.secondary,
-      label: 'Normal',
-    },
-    {
-      value: PERFORMANCE_DATA.underPerformingDays,
-      color: colors.tertiary,
-      label: 'Under',
-    },
-    {
-      value: PERFORMANCE_DATA.zeroEnergyDays,
-      color: colors.error,
-      label: 'Zero',
-    },
+    { value: PERFORMANCE_DATA.overPerformingDays, color: colors.primary, label: 'Over' },
+    { value: PERFORMANCE_DATA.normalDays, color: colors.secondary, label: 'Normal' },
+    { value: PERFORMANCE_DATA.underPerformingDays, color: colors.tertiary, label: 'Under' },
+    { value: PERFORMANCE_DATA.zeroEnergyDays, color: colors.error, label: 'Zero' },
   ].filter((item) => item.value > 0);
 
   const generatePDF = async () => {
@@ -172,72 +167,18 @@ export default function PerformanceScreen() {
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
               * { margin: 0; padding: 0; box-sizing: border-box; }
-              body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                padding: 40px;
-                color: ${PDF_COLORS.section.text};
-                background: white;
-              }
-              .header {
-                border-bottom: 4px solid ${PDF_COLORS.header.background};
-                padding-bottom: 20px;
-                margin-bottom: 30px;
-              }
-              .header h1 {
-                color: ${PDF_COLORS.header.background};
-                font-size: 28px;
-                margin-bottom: 8px;
-              }
-              .header .subtitle {
-                color: ${PDF_COLORS.section.text};
-                opacity: 0.7;
-                font-size: 16px;
-              }
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 40px; color: ${PDF_COLORS.section.text}; background: white; }
+              .header { border-bottom: 4px solid ${PDF_COLORS.header.background}; padding-bottom: 20px; margin-bottom: 30px; }
+              .header h1 { color: ${PDF_COLORS.header.background}; font-size: 28px; margin-bottom: 8px; }
+              .header .subtitle { color: ${PDF_COLORS.section.text}; opacity: 0.7; font-size: 16px; }
               .section { margin-bottom: 30px; }
-              .section h2 {
-                color: ${PDF_COLORS.section.text};
-                font-size: 20px;
-                margin-bottom: 16px;
-                border-left: 4px solid ${PDF_COLORS.chart.primary};
-                padding-left: 12px;
-              }
-              .stats-grid {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 16px;
-                margin-bottom: 30px;
-              }
-              .stat-card {
-                background: ${PDF_COLORS.section.background};
-                padding: 20px;
-                border-radius: 12px;
-                border-left: 4px solid ${PDF_COLORS.chart.primary};
-              }
-              .stat-card .label {
-                color: ${PDF_COLORS.section.text};
-                opacity: 0.7;
-                font-size: 12px;
-                text-transform: uppercase;
-                margin-bottom: 8px;
-              }
-              .stat-card .value {
-                color: ${PDF_COLORS.section.text};
-                font-size: 24px;
-                font-weight: bold;
-              }
-              .stat-card .unit {
-                color: ${PDF_COLORS.section.text};
-                opacity: 0.6;
-                font-size: 14px;
-              }
-              .footer {
-                margin-top: 40px;
-                padding-top: 20px;
-                border-top: 2px solid #E0E0E0;
-                text-align: center;
-                color: #757575;
-                font-size: 12px;
-              }
+              .section h2 { color: ${PDF_COLORS.section.text}; font-size: 20px; margin-bottom: 16px; border-left: 4px solid ${PDF_COLORS.chart.primary}; padding-left: 12px; }
+              .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 30px; }
+              .stat-card { background: ${PDF_COLORS.section.background}; padding: 20px; border-radius: 12px; border-left: 4px solid ${PDF_COLORS.chart.primary}; }
+              .stat-card .label { color: ${PDF_COLORS.section.text}; opacity: 0.7; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
+              .stat-card .value { color: ${PDF_COLORS.section.text}; font-size: 24px; font-weight: bold; }
+              .stat-card .unit { color: ${PDF_COLORS.section.text}; opacity: 0.6; font-size: 14px; }
+              .footer { margin-top: 40px; padding-top: 20px; border-top: 2px solid #E0E0E0; text-align: center; color: #757575; font-size: 12px; }
             </style>
           </head>
           <body>
@@ -246,7 +187,6 @@ export default function PerformanceScreen() {
               <p class="subtitle">Generated on ${new Date().toLocaleDateString()}</p>
               <p class="subtitle">Capacity: ${displayCapacity}</p>
             </div>
-
             <div class="section">
               <h2>Performance Summary</h2>
               <div class="stats-grid">
@@ -267,7 +207,6 @@ export default function PerformanceScreen() {
                 </div>
               </div>
             </div>
-
             <div class="footer">
               <p>SolYield - Solar Farm Management System</p>
               <p>This report is generated automatically by the mobile application</p>
@@ -280,28 +219,13 @@ export default function PerformanceScreen() {
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri);
-        setAlertConfig({
-          visible: true,
-          title: 'Success',
-          message: 'PDF report has been generated and shared!',
-          type: 'success',
-        });
+        setAlertConfig({ visible: true, title: 'Success', message: 'PDF report has been generated and shared!', type: 'success' });
       } else {
-        setAlertConfig({
-          visible: true,
-          title: 'PDF Generated',
-          message: `Report saved at: ${uri}`,
-          type: 'success',
-        });
+        setAlertConfig({ visible: true, title: 'PDF Generated', message: `Report saved at: ${uri}`, type: 'success' });
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
-      setAlertConfig({
-        visible: true,
-        title: 'Error',
-        message: 'Failed to generate PDF report',
-        type: 'error',
-      });
+      setAlertConfig({ visible: true, title: 'Error', message: 'Failed to generate PDF report', type: 'error' });
     } finally {
       setGeneratingPDF(false);
     }
@@ -337,7 +261,7 @@ export default function PerformanceScreen() {
                 marginTop: 4,
               }}
             >
-              {currentMonth?.month || 'No Data'}
+              {currentPeriod?.periodLabel || 'No Data'}
             </StyledText>
           </View>
           <TouchableOpacity
@@ -546,7 +470,7 @@ export default function PerformanceScreen() {
           </View>
         </Animated.View>
 
-        {/* Bar Chart */}
+        {/* Bar Chart Fixed View */}
         <Animated.View
           entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(250)}
           style={{
@@ -555,13 +479,14 @@ export default function PerformanceScreen() {
             borderRadius: M3Shape.extraLarge,
             marginTop: M3Spacing.lg,
             ...M3Elevation.level2,
+            overflow: 'hidden', 
           }}
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: M3Spacing.md }}>
             <TouchableOpacity
-              onPress={goToPreviousMonth}
-              disabled={currentMonthIndex === 0}
-              style={{ opacity: currentMonthIndex === 0 ? 0.3 : 1, padding: M3Spacing.sm }}
+              onPress={goToPreviousPeriod}
+              disabled={currentPeriodIndex === 0}
+              style={{ opacity: currentPeriodIndex === 0 ? 0.3 : 1, padding: M3Spacing.sm }}
             >
               <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
             </TouchableOpacity>
@@ -575,36 +500,58 @@ export default function PerformanceScreen() {
               Daily Generation
             </StyledText>
             <TouchableOpacity
-              onPress={goToNextMonth}
-              disabled={currentMonthIndex === monthlyGroups.length - 1}
-              style={{ opacity: currentMonthIndex === monthlyGroups.length - 1 ? 0.3 : 1, padding: M3Spacing.sm }}
+              onPress={goToNextPeriod}
+              disabled={currentPeriodIndex === weeklyGroups.length - 1}
+              style={{ opacity: currentPeriodIndex === weeklyGroups.length - 1 ? 0.3 : 1, padding: M3Spacing.sm }}
             >
               <MaterialCommunityIcons name="chevron-right" size={28} color={colors.onSurface} />
             </TouchableOpacity>
           </View>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ minWidth: chartWidth }}
-          >
-            <BarChart
-              data={barData}
-              barWidth={barWidth}
-              spacing={spacing}
-              roundedTop
-              roundedBottom
-              hideRules
-              xAxisThickness={0}
-              yAxisThickness={0}
-              yAxisTextStyle={{ color: colors.onSurfaceVariant, ...M3Typography.body.small }}
-              noOfSections={4}
-              maxValue={Math.ceil(stats.peakPower * 1.2)}
-              width={chartWidth - chartPadding}
-            />
-          </ScrollView>
+          
+          {/* Chart Wrapper - Removed fixed height so it scales naturally to fit the text below */}
+          <View style={{ width: '100%', paddingTop: 10 }}>
+            {barData.length > 0 ? (
+              <View style={{ alignItems: 'center' }}>
+                <BarChart
+                  data={barData}
+                  barWidth={24}
+                  spacing={16}
+                  roundedTop
+                  roundedBottom
+                  hideRules
+                  xAxisThickness={1}
+                  xAxisColor={colors.outlineVariant}
+                  yAxisThickness={0}
+                  yAxisTextStyle={{ color: colors.onSurfaceVariant, fontSize: 11 }}
+                  xAxisLabelTextStyle={{ color: colors.onSurfaceVariant, fontSize: 11 }}
+                  noOfSections={noOfSections}
+                  stepValue={step}
+                  maxValue={yAxisMax}
+                  width={safeChartWidth}
+                  height={150} 
+                  isAnimated
+                />
+                
+                {/* Time Period Label Below Chart */}
+                <StyledText 
+                  style={{ 
+                    color: colors.onSurfaceVariant, 
+                    ...M3Typography.label.medium,
+                    marginTop: 16 
+                  }}
+                >
+                  {currentPeriod?.periodLabel || 'Unknown Period'}
+                </StyledText>
+              </View>
+            ) : (
+              <View style={{ height: 150, alignItems: 'center', justifyContent: 'center' }}>
+                <StyledText style={{ color: colors.onSurfaceVariant }}>No generation data available</StyledText>
+              </View>
+            )}
+          </View>
         </Animated.View>
 
-        {/* Pie Chart */}
+        {/* Pie Chart Fixed View */}
         <Animated.View
           entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(300)}
           style={{
@@ -613,6 +560,7 @@ export default function PerformanceScreen() {
             borderRadius: M3Shape.extraLarge,
             marginTop: M3Spacing.lg,
             ...M3Elevation.level2,
+            overflow: 'hidden', 
           }}
         >
           <StyledText
@@ -625,39 +573,43 @@ export default function PerformanceScreen() {
           >
             Performance Distribution
           </StyledText>
-          <View style={{ alignItems: 'center', marginVertical: M3Spacing.md }}>
-            <PieChart
-              data={pieData}
-              donut
-              innerRadius={70}
-              radius={110}
-              innerCircleColor={colors.surfaceContainerHigh}
-              centerLabelComponent={() => (
-                <View>
-                  <StyledText
-                    style={{
-                      ...M3Typography.display.small,
-                      color: colors.onSurface,
-                      fontWeight: '700',
-                      textAlign: 'center',
-                    }}
-                  >
-                    {dailyData.length}
-                  </StyledText>
-                  <StyledText
-                    style={{
-                      ...M3Typography.body.small,
-                      color: colors.onSurfaceVariant,
-                      textAlign: 'center',
-                    }}
-                  >
-                    Days
-                  </StyledText>
-                </View>
-              )}
-            />
+          <View style={{ alignItems: 'center', marginVertical: M3Spacing.md, height: pieRadius * 2 + 20, justifyContent: 'center' }}>
+            {pieData.length > 0 ? (
+              <PieChart
+                data={pieData}
+                donut
+                innerRadius={innerRadius}
+                radius={pieRadius}
+                innerCircleColor={colors.surfaceContainerHigh}
+                centerLabelComponent={() => (
+                  <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                    <StyledText
+                      style={{
+                        ...M3Typography.display.small,
+                        color: colors.onSurface,
+                        fontWeight: '700',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {dailyData.length}
+                    </StyledText>
+                    <StyledText
+                      style={{
+                        ...M3Typography.body.small,
+                        color: colors.onSurfaceVariant,
+                        textAlign: 'center',
+                      }}
+                    >
+                      Days
+                    </StyledText>
+                  </View>
+                )}
+              />
+            ) : (
+               <StyledText style={{ color: colors.onSurfaceVariant }}>No performance distribution data</StyledText>
+            )}
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: M3Spacing.md, marginTop: M3Spacing.md }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: M3Spacing.md, marginTop: M3Spacing.md, justifyContent: 'center' }}>
             {pieData.map((item, index) => (
               <View key={index} style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View

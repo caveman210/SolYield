@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, FlatList, TouchableOpacity, StyleSheet, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -13,6 +13,7 @@ import { useScheduleManagement } from '../../lib/hooks/useScheduleManagement';
 import { useSiteManagement } from '../../lib/hooks/useSiteManagement';
 import StyledText from '../components/StyledText';
 import M3ErrorDialog from '../components/M3ErrorDialog';
+import M3ConfirmDialog from '../components/M3ConfirmDialog';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -21,8 +22,21 @@ export default function ScheduleScreen() {
   const colors = useMaterialYouColors();
   const insets = useSafeAreaInsets();
   const [syncing, setSyncing] = useState(false);
-  const { allVisits, removeVisit, canModifyVisit } = useScheduleManagement();
+  
+  const { 
+    allVisits, 
+    removeVisit, 
+    canModifyVisit, 
+    checkInVisit, 
+    completeVisit, 
+    archiveVisit 
+  } = useScheduleManagement();
+  
   const { allSites } = useSiteManagement();
+  
+  const [archiveReason, setArchiveReason] = useState('');
+  const [visitToArchive, setVisitToArchive] = useState<ScheduleVisit | null>(null);
+
   const [dialogConfig, setDialogConfig] = useState<{
     visible: boolean;
     title: string;
@@ -69,12 +83,38 @@ export default function ScheduleScreen() {
           setDialogConfig({
             visible: true,
             title: 'Error',
-            message: 'Could not delete this visit. Only user-created visits can be deleted.',
+            message: 'Could not delete this visit.',
             type: 'error',
           });
         }
       },
     });
+  };
+
+  const handleArchiveSubmit = async () => {
+    if (!visitToArchive) return;
+    
+    if (!archiveReason.trim()) {
+      setDialogConfig({
+        visible: true,
+        title: 'Reason Required',
+        message: 'You must provide a reason for archiving this visit.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    const success = await archiveVisit(visitToArchive.id, archiveReason);
+    if (success) {
+      setVisitToArchive(null);
+      setArchiveReason('');
+      setDialogConfig({
+        visible: true,
+        title: 'Archived',
+        message: 'Visit has been successfully archived.',
+        type: 'success',
+      });
+    }
   };
 
   const getDateLabel = (date: string) => {
@@ -96,10 +136,10 @@ export default function ScheduleScreen() {
   const renderVisit = ({ item, index }: { item: ScheduleVisit; index: number }) => {
     const site = allSites.find((s) => s.id === item.siteId);
     const badgeStyle = getDateBadgeStyle(item.date);
-    const isUserCreated = canModifyVisit(item.id);
+    const status = item.status || 'pending';
 
     return (
-      <AnimatedTouchableOpacity
+      <Animated.View
         entering={FadeInUp.duration(M3Motion.duration.medium).delay(index * 50)}
         style={[
           styles.visitCard,
@@ -108,8 +148,6 @@ export default function ScheduleScreen() {
             shadowColor: colors.shadow,
           },
         ]}
-        onPress={() => site && router.push(`/site/${site.id}`)}
-        activeOpacity={0.7}
       >
         <View style={styles.visitContent}>
           <View style={styles.cardHeader}>
@@ -123,20 +161,31 @@ export default function ScheduleScreen() {
                 {item.time}
               </StyledText>
             </View>
-            {isUserCreated && (
-              <TouchableOpacity
-                onPress={() => handleDeleteVisit(item)}
-                style={[styles.deleteIconButton, { backgroundColor: colors.errorContainer }]}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={18} color={colors.error} />
-              </TouchableOpacity>
-            )}
+            
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={[styles.statusBadge, { backgroundColor: status === 'completed' ? colors.primaryContainer : colors.surfaceVariant }]}>
+                <StyledText style={{ color: status === 'completed' ? colors.primary : colors.onSurfaceVariant, fontSize: 12, fontWeight: '600', textTransform: 'capitalize' }}>
+                  {status.replace('-', ' ')}
+                </StyledText>
+              </View>
+
+              {canModifyVisit(item.id) && (
+                <TouchableOpacity
+                  onPress={() => handleDeleteVisit(item)}
+                  style={[styles.deleteIconButton, { backgroundColor: colors.errorContainer }]}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+          
           <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
+          
           <View style={styles.visitDetails}>
             <StyledText style={[styles.visitTitle, { color: colors.onSurface }]}>
-              {item.title}
+              {item.title} {item.isRequiem ? '(Other Reason)' : ''}
             </StyledText>
             {site && (
               <View style={styles.siteLocation}>
@@ -151,6 +200,7 @@ export default function ScheduleScreen() {
                 </StyledText>
               </View>
             )}
+            
             <View style={styles.actionButtons}>
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: colors.tertiaryContainer }]}
@@ -185,9 +235,48 @@ export default function ScheduleScreen() {
                 </StyledText>
               </TouchableOpacity>
             </View>
+
+            {/* STATUS PROGRESSION ACTIONS */}
+            <View style={[styles.divider, { backgroundColor: colors.outlineVariant, marginTop: 12, marginBottom: 12 }]} />
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              
+              {status === 'pending' && (
+                <TouchableOpacity 
+                  style={[styles.statusActionButton, { backgroundColor: colors.primary }]} 
+                  onPress={() => checkInVisit(item.id)}
+                >
+                  <MaterialCommunityIcons name="map-marker-check" size={18} color={colors.onPrimary} />
+                  <StyledText style={[styles.statusActionText, { color: colors.onPrimary }]}>Check-in</StyledText>
+                </TouchableOpacity>
+              )}
+              
+              {status === 'in-progress' && (
+                <TouchableOpacity 
+                  style={[styles.statusActionButton, { backgroundColor: colors.secondary }]} 
+                  onPress={() => completeVisit(item.id)}
+                >
+                  <MaterialCommunityIcons name="check-circle-outline" size={18} color={colors.onSecondary} />
+                  <StyledText style={[styles.statusActionText, { color: colors.onSecondary }]}>Complete Work</StyledText>
+                </TouchableOpacity>
+              )}
+
+              {/* ARCHIVE BUTTON IS NOW ALWAYS VISIBLE */}
+              <TouchableOpacity 
+                style={[styles.statusActionButton, { backgroundColor: colors.surfaceContainerHighest, borderWidth: 1, borderColor: colors.outline }]} 
+                onPress={() => {
+                  setVisitToArchive(item);
+                  setArchiveReason('');
+                }}
+              >
+                <MaterialCommunityIcons name="archive-outline" size={18} color={colors.onSurface} />
+                <StyledText style={[styles.statusActionText, { color: colors.onSurface }]}>Archive</StyledText>
+              </TouchableOpacity>
+              
+            </View>
+
           </View>
         </View>
-      </AnimatedTouchableOpacity>
+      </Animated.View>
     );
   };
 
@@ -234,6 +323,7 @@ export default function ScheduleScreen() {
           </View>
         </AnimatedTouchableOpacity>
       </View>
+      
       <FlatList
         data={allVisits}
         renderItem={renderVisit}
@@ -288,6 +378,29 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </Animated.View>
 
+      {/* Archive Reason Dialog */}
+      <M3ConfirmDialog
+        visible={!!visitToArchive}
+        title="Archive Visit"
+        message={`Please provide a reason for archiving "${visitToArchive?.title}".`}
+        icon="archive"
+        iconColor={colors.primary}
+        onDismiss={() => setVisitToArchive(null)}
+        buttons={[
+          { text: 'Cancel', style: 'cancel', onPress: () => setVisitToArchive(null) },
+          { text: 'Archive', style: 'default', onPress: handleArchiveSubmit, disabled: !archiveReason.trim() }
+        ]}
+      >
+        <TextInput
+          style={[styles.reasonInput, { backgroundColor: colors.surface, color: colors.onSurface, borderColor: colors.outline }]}
+          placeholder="e.g. Work fully complete, postponed..."
+          placeholderTextColor={colors.onSurfaceVariant}
+          value={archiveReason}
+          onChangeText={setArchiveReason}
+          multiline
+        />
+      </M3ConfirmDialog>
+
       {/* Error/Info Dialog */}
       <M3ErrorDialog
         visible={dialogConfig.visible}
@@ -302,152 +415,39 @@ export default function ScheduleScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 16,
-  },
-  headerTitle: {
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    marginBottom: 16,
-  },
-  syncButton: {
-    borderRadius: 9999,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  syncButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  syncIcon: {
-    marginRight: 8,
-  },
-  syncButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  listContent: {
-    padding: 20,
-    paddingTop: 8,
-  },
-  visitCard: {
-    padding: 20,
-    marginBottom: 16,
-    borderRadius: 16,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  visitContent: {
-    flexDirection: 'column',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  dateSection: {
-    alignItems: 'center',
-    minWidth: 80,
-  },
-  dateBadge: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  dateBadgeText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  timeText: {
-    fontSize: 14,
-  },
-  deleteIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  divider: {
-    height: 1,
-    marginBottom: 12,
-  },
-  visitDetails: {
-    flex: 1,
-  },
-  visitTitle: {
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  siteLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  locationIcon: {
-    marginRight: 4,
-  },
-  siteText: {
-    fontSize: 14,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 64,
-  },
-  emptyTitle: {
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    textAlign: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  fabTouchable: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  container: { flex: 1 },
+  header: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 16 },
+  headerTitle: { marginBottom: 8 },
+  headerSubtitle: { marginBottom: 16 },
+  syncButton: { borderRadius: 9999, paddingVertical: 16, alignItems: 'center', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 2 },
+  syncButtonContent: { flexDirection: 'row', alignItems: 'center' },
+  syncIcon: { marginRight: 8 },
+  syncButtonText: { fontSize: 14, fontWeight: '500' },
+  listContent: { padding: 20, paddingTop: 8 },
+  visitCard: { padding: 20, marginBottom: 16, borderRadius: 16, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 2 },
+  visitContent: { flexDirection: 'column' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  dateSection: { alignItems: 'center', minWidth: 80 },
+  dateBadge: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8, marginBottom: 8 },
+  dateBadgeText: { fontSize: 14, fontWeight: '500' },
+  timeText: { fontSize: 14 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  deleteIconButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  divider: { height: 1, marginBottom: 12 },
+  visitDetails: { flex: 1 },
+  visitTitle: { fontSize: 16, marginBottom: 8, fontWeight: '600' },
+  siteLocation: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  locationIcon: { marginRight: 4 },
+  siteText: { fontSize: 14 },
+  actionButtons: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  actionButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, gap: 4 },
+  actionButtonText: { fontSize: 12, fontWeight: '500' },
+  statusActionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, gap: 8, minWidth: '45%' },
+  statusActionText: { fontSize: 14, fontWeight: '600' },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
+  emptyTitle: { marginTop: 16, marginBottom: 8 },
+  emptyText: { textAlign: 'center' },
+  fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 16, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+  fabTouchable: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+  reasonInput: { borderWidth: 1, borderRadius: 12, padding: 16, minHeight: 100, textAlignVertical: 'top', marginTop: 12 }
 });

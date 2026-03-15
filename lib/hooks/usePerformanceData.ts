@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useDatabase } from '@nozbe/watermelondb/react';
 import { Q } from '@nozbe/watermelondb';
-import { getPerformanceRecordsCollection, getSitesCollection } from '../../database';
+import { getPerformanceRecordsCollection } from '../../database';
 import PerformanceRecord from '../../database/models/PerformanceRecord';
 
 export interface ChartDataPoint {
@@ -10,8 +10,9 @@ export interface ChartDataPoint {
   label?: string;
 }
 
-export interface MonthlyData {
-  month: string; // e.g., "January 2025"
+export interface WeeklyData {
+  periodLabel: string; // e.g., "Mar 17 - 24, 2026"
+  sortKey: string;
   year: number;
   data: ChartDataPoint[];
 }
@@ -24,16 +25,48 @@ export interface PerformanceStats {
 }
 
 export interface UsePerformanceDataResult {
-  monthlyGroups: MonthlyData[];
+  weeklyGroups: WeeklyData[];
   isLoading: boolean;
   error: Error | null;
-  getStatsForMonth: (monthIndex: number, siteId?: string | null) => PerformanceStats;
-  getChartDataForMonth: (monthIndex: number, siteId?: string | null) => ChartDataPoint[];
+  getStatsForPeriod: (periodIndex: number, siteId?: string | null) => PerformanceStats;
+  getChartDataForPeriod: (periodIndex: number, siteId?: string | null) => ChartDataPoint[];
+}
+
+/**
+ * Helper to get week boundaries and labels (Monday - Sunday)
+ */
+function getWeekInfo(dateStr: string) {
+  // Parse safely to avoid timezone offset bugs
+  const parts = dateStr.split('-');
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust so Monday is start of week
+  
+  const start = new Date(d.getFullYear(), d.getMonth(), diff);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  
+  const startMonth = start.toLocaleDateString('en-US', { month: 'short' });
+  const startDay = start.getDate();
+  const endMonth = end.toLocaleDateString('en-US', { month: 'short' });
+  const endDay = end.getDate();
+  const year = end.getFullYear();
+
+  let label = '';
+  if (startMonth === endMonth) {
+    label = `${startMonth} ${startDay} - ${endDay}, ${year}`;
+  } else {
+    label = `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`;
+  }
+  
+  // Create sortable key based on the Monday of that week
+  const sortKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+  
+  return { label, sortKey, year };
 }
 
 /**
  * Hook to query and aggregate performance data from WatermelonDB.
- * Supports filtering by site or showing aggregate data for all sites.
  */
 export function usePerformanceData(): UsePerformanceDataResult {
   const database = useDatabase();
@@ -41,7 +74,6 @@ export function usePerformanceData(): UsePerformanceDataResult {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // Load all performance records
   useEffect(() => {
     let mounted = true;
 
@@ -49,11 +81,8 @@ export function usePerformanceData(): UsePerformanceDataResult {
       try {
         setIsLoading(true);
         setError(null);
-
         const performanceCollection = getPerformanceRecordsCollection();
-        const allRecords = await performanceCollection
-          .query(Q.sortBy('date', Q.desc))
-          .fetch();
+        const allRecords = await performanceCollection.query(Q.sortBy('date', Q.desc)).fetch();
 
         if (mounted) {
           setRecords(allRecords);
@@ -70,94 +99,54 @@ export function usePerformanceData(): UsePerformanceDataResult {
 
     loadRecords();
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [database]);
 
-  // Group records by month
-  const monthlyGroups = useMemo(() => {
-    const grouped: { [key: string]: PerformanceRecord[] } = {};
+  // Group records by Week
+  const weeklyGroups = useMemo(() => {
+    const grouped: { [key: string]: { records: PerformanceRecord[], label: string, year: number } } = {};
 
     records.forEach((record) => {
-      // Parse date string (YYYY-MM-DD format)
-      const dateParts = record.date.split('-');
-      const year = parseInt(dateParts[0]);
-      const month = parseInt(dateParts[1]) - 1; // 0-indexed
-
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-      ];
-
-      const monthKey = `${monthNames[month]} ${year}`;
-
-      if (!grouped[monthKey]) {
-        grouped[monthKey] = [];
+      const { label, sortKey, year } = getWeekInfo(record.date);
+      if (!grouped[sortKey]) {
+        grouped[sortKey] = { records: [], label, year };
       }
-
-      grouped[monthKey].push(record);
+      grouped[sortKey].records.push(record);
     });
 
-    // Convert to array and sort by date (newest first)
     return Object.entries(grouped)
-      .map(([monthKey, monthRecords]) => {
-        const [monthName, yearStr] = monthKey.split(' ');
-        const year = parseInt(yearStr);
-
-        // Sort records by date within month
-        const sortedRecords = monthRecords.sort((a, b) => {
-          return a.date.localeCompare(b.date);
+      .map(([sortKey, groupData]) => {
+        // Sort chronologically within the week
+        const sortedRecords = groupData.records.sort((a, b) => a.date.localeCompare(b.date));
+        
+        const data: ChartDataPoint[] = sortedRecords.map((record) => {
+          return {
+            date: record.date,
+            value: record.energyGeneratedKwh,
+            label: record.date.split('-')[2],
+          };
         });
 
-        const data: ChartDataPoint[] = sortedRecords.map((record) => ({
-          date: record.date,
-          value: record.energyGeneratedKwh,
-          label: record.date.split('-')[2], // Day of month
-        }));
-
         return {
-          month: monthKey,
-          year,
+          periodLabel: groupData.label,
+          sortKey,
+          year: groupData.year,
           data,
         };
       })
-      .sort((a, b) => {
-        // Sort by year, then by month name
-        if (a.year !== b.year) return b.year - a.year;
-        const monthOrder = [
-          'January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-        const aMonth = monthOrder.indexOf(a.month.split(' ')[0]);
-        const bMonth = monthOrder.indexOf(b.month.split(' ')[0]);
-        return bMonth - aMonth;
-      });
+      .sort((a, b) => b.sortKey.localeCompare(a.sortKey)); // Sort newest week first
   }, [records]);
 
-  /**
-   * Get statistics for a specific month, optionally filtered by site.
-   */
-  const getStatsForMonth = (monthIndex: number, siteId?: string | null): PerformanceStats => {
-    if (monthIndex < 0 || monthIndex >= monthlyGroups.length) {
+  const getStatsForPeriod = (periodIndex: number, siteId?: string | null): PerformanceStats => {
+    if (periodIndex < 0 || periodIndex >= weeklyGroups.length) {
       return { avgGeneration: 0, peakPower: 0, totalEnergy: 0, efficiency: 0 };
     }
-
-    const monthData = monthlyGroups[monthIndex];
+    const periodData = weeklyGroups[periodIndex];
     
-    // Filter records by site if specified
     let relevantRecords = records.filter((r) => {
-      // Check if record belongs to this month
-      const recordMonth = `${r.date.split('-')[1]}/${r.date.split('-')[0]}`;
-      const targetMonth = `${String(monthData.year).padStart(2, '0')}/${monthData.year}`;
-      
-      // Simple month match (can be improved)
-      const monthMatches = r.date.includes(String(monthData.year));
-      
-      if (siteId) {
-        return monthMatches && r.siteId === siteId;
-      }
-      return monthMatches;
+      const { sortKey } = getWeekInfo(r.date);
+      if (siteId) return sortKey === periodData.sortKey && r.siteId === siteId;
+      return sortKey === periodData.sortKey;
     });
 
     if (relevantRecords.length === 0) {
@@ -177,25 +166,16 @@ export function usePerformanceData(): UsePerformanceDataResult {
     };
   };
 
-  /**
-   * Get chart data for a specific month, optionally filtered by site.
-   */
-  const getChartDataForMonth = (monthIndex: number, siteId?: string | null): ChartDataPoint[] => {
-    if (monthIndex < 0 || monthIndex >= monthlyGroups.length) {
+  const getChartDataForPeriod = (periodIndex: number, siteId?: string | null): ChartDataPoint[] => {
+    if (periodIndex < 0 || periodIndex >= weeklyGroups.length) {
       return [];
     }
-
-    const monthData = monthlyGroups[monthIndex];
-
-    if (!siteId) {
-      // Return aggregate data for all sites
-      return monthData.data;
-    }
-
-    // Filter by specific site
-    const siteRecords = records.filter((r) => {
-      const monthMatches = r.date.includes(String(monthData.year));
-      return monthMatches && r.siteId === siteId;
+    const periodData = weeklyGroups[periodIndex];
+    
+    let siteRecords = records.filter((r) => {
+      const { sortKey } = getWeekInfo(r.date);
+      if (siteId) return sortKey === periodData.sortKey && r.siteId === siteId;
+      return sortKey === periodData.sortKey;
     });
 
     return siteRecords
@@ -208,10 +188,10 @@ export function usePerformanceData(): UsePerformanceDataResult {
   };
 
   return {
-    monthlyGroups,
+    weeklyGroups,
     isLoading,
     error,
-    getStatsForMonth,
-    getChartDataForMonth,
+    getStatsForPeriod,
+    getChartDataForPeriod,
   };
 }

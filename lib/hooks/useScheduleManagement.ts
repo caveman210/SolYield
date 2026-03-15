@@ -1,7 +1,6 @@
 /**
  * useScheduleManagement Hook
- * 
- * Provides schedule/visit management operations (CRUD).
+ * * Provides schedule/visit management operations (CRUD).
  * Uses WatermelonDB as single source of truth.
  * Automatically creates activity feed entries.
  */
@@ -11,44 +10,36 @@ import { useSchedules, CreateScheduleData } from './useSchedules';
 import { getActivitiesCollection, database } from '../../database';
 import Schedule from '../../database/models/Schedule';
 
-// Enhanced type for backward compatibility (extends lib/types ScheduleVisit)
 export interface ScheduleVisit {
   id: string;
   title: string;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:MM
-  siteId: string; // For requiem visits, use empty string or fallback site
+  date: string;
+  time: string;
+  siteId: string;
   assignedUserId?: string;
   status?: 'pending' | 'in-progress' | 'completed' | 'cancelled';
-  description?: string; // Changed from 'notes' to match Schedule model
+  description?: string;
   isRequiem?: boolean;
   requiemReason?: string;
   linkedSiteId?: string;
 }
 
-/**
- * Convert WatermelonDB Schedule model to legacy ScheduleVisit type
- */
 function convertToLegacyVisit(schedule: Schedule): ScheduleVisit {
   return {
     id: schedule.id,
     title: schedule.title,
     date: schedule.date,
     time: schedule.time,
-    siteId: schedule.siteId || '', // Use empty string for requiem visits
+    siteId: schedule.siteId || '',
     assignedUserId: schedule.assignedUserId,
     status: schedule.status as any,
-    description: schedule.description,
+    description: schedule.notes || schedule.description,
     isRequiem: schedule.isRequiem,
     requiemReason: schedule.requiemReason || undefined,
     linkedSiteId: schedule.linkedSiteId || undefined,
   };
 }
 
-/**
- * Hook for managing schedule/visits (create, update, delete)
- * Maintains backward compatibility while using WatermelonDB
- */
 export const useScheduleManagement = () => {
   const { 
     schedules, 
@@ -59,38 +50,32 @@ export const useScheduleManagement = () => {
     refresh
   } = useSchedules();
 
-  // Convert to legacy format for backward compatibility
   const allVisits = useMemo(
     () => schedules.map(convertToLegacyVisit),
     [schedules]
   );
 
-  // Separate user-created visits (those with 'schedule_user_' prefix)
   const userVisits = useMemo(
     () => allVisits.filter(v => v.id.startsWith('schedule_user_')),
     [allVisits]
   );
 
-  /**
-   * Schedule a new visit
-   */
   const scheduleVisit = useCallback(
     async (visitData: Omit<ScheduleVisit, 'id'>, siteName?: string) => {
       try {
-        const newSchedule = await createSchedule({
+        await createSchedule({
           title: visitData.title,
           date: visitData.date,
           time: visitData.time,
-          siteId: visitData.siteId || undefined, // Convert empty string to undefined
+          siteId: visitData.siteId || undefined,
           assignedUserId: visitData.assignedUserId || 'user_arjun',
           status: visitData.status || 'pending',
-          notes: visitData.description, // Map description -> notes
+          notes: visitData.description,
           isRequiem: visitData.isRequiem,
           requiemReason: visitData.requiemReason,
           linkedSiteId: visitData.linkedSiteId,
         });
 
-        // Create activity feed entry
         await database.write(async () => {
           const activitiesCollection = getActivitiesCollection();
           await activitiesCollection.create((activity: any) => {
@@ -117,13 +102,9 @@ export const useScheduleManagement = () => {
     [createSchedule, refresh]
   );
 
-  /**
-   * Update an existing user visit
-   */
   const editVisit = useCallback(
     async (visitData: ScheduleVisit, siteName?: string) => {
       try {
-        // Only allow editing user-created visits
         const isUserVisit = visitData.id.startsWith('schedule_user_');
         if (!isUserVisit) {
           console.warn('Cannot edit built-in schedules');
@@ -137,13 +118,12 @@ export const useScheduleManagement = () => {
           siteId: visitData.siteId || undefined,
           assignedUserId: visitData.assignedUserId,
           status: visitData.status,
-          notes: visitData.description, // Map description -> notes
+          notes: visitData.description,
           isRequiem: visitData.isRequiem,
           requiemReason: visitData.requiemReason,
           linkedSiteId: visitData.linkedSiteId,
         });
 
-        // Create activity feed entry
         await database.write(async () => {
           const activitiesCollection = getActivitiesCollection();
           await activitiesCollection.create((activity: any) => {
@@ -170,13 +150,9 @@ export const useScheduleManagement = () => {
     [updateSchedule, refresh]
   );
 
-  /**
-   * Delete a user visit
-   */
   const removeVisit = useCallback(
     async (visitId: string, visitTitle?: string) => {
       try {
-        // Only allow deleting user-created visits
         const isUserVisit = visitId.startsWith('schedule_user_');
         if (!isUserVisit) {
           console.warn('Cannot delete built-in schedules');
@@ -185,7 +161,6 @@ export const useScheduleManagement = () => {
 
         await deleteSchedule(visitId);
 
-        // Create activity feed entry
         await database.write(async () => {
           const activitiesCollection = getActivitiesCollection();
           await activitiesCollection.create((activity: any) => {
@@ -212,55 +187,164 @@ export const useScheduleManagement = () => {
     [deleteSchedule, refresh]
   );
 
-  /**
-   * Check if a visit can be edited/deleted (must be user-created)
-   */
+  const checkInVisit = useCallback(async (visitId: string) => {
+    try {
+      const schedulesCollection = database.collections.get('schedules');
+      const visit = await schedulesCollection.find(visitId);
+      
+      await database.write(async () => {
+        await visit.update((v: any) => {
+          v.status = 'in-progress';
+          v.checked_in_at = new Date().toISOString(); 
+        });
+        
+        const activitiesCollection = getActivitiesCollection();
+        await activitiesCollection.create((activity: any) => {
+          activity.type = 'check-in';
+          activity.title = 'Visit Started';
+          activity.description = `Checked in to work assignment`;
+          activity.siteId = (visit as any).siteId || '';
+          activity.timestamp = Date.now();
+          activity.icon = 'map-marker-check';
+          activity.archived = false;
+          activity.synced = false;
+        });
+      });
+      refresh();
+      return true;
+    } catch (error) {
+      console.error('Error checking in:', error);
+      return false;
+    }
+  }, [refresh]);
+
+  const completeVisit = useCallback(async (visitId: string) => {
+    try {
+      const schedulesCollection = database.collections.get('schedules');
+      const visit = await schedulesCollection.find(visitId);
+      
+      await database.write(async () => {
+        await visit.update((v: any) => {
+          v.status = 'completed';
+          v.checked_out_at = new Date().toISOString();
+        });
+        
+        const activitiesCollection = getActivitiesCollection();
+        await activitiesCollection.create((activity: any) => {
+          activity.type = 'inspection';
+          activity.title = 'Visit Completed';
+          activity.description = `Marked visit as completed`;
+          activity.siteId = (visit as any).siteId || '';
+          activity.timestamp = Date.now();
+          activity.icon = 'check-circle-outline';
+          activity.archived = false;
+          activity.synced = false;
+        });
+      });
+      refresh();
+      return true;
+    } catch (error) {
+      console.error('Error completing visit:', error);
+      return false;
+    }
+  }, [refresh]);
+
+  const archiveVisit = useCallback(async (visitId: string, reason: string) => {
+    try {
+      const schedulesCollection = database.collections.get('schedules');
+      const visit = await schedulesCollection.find(visitId);
+      
+      await database.write(async () => {
+        await visit.update((v: any) => {
+          v.archived = true;
+          v.notes = v.notes ? `${v.notes}\n\nArchive Reason: ${reason}` : `Archive Reason: ${reason}`;
+        });
+        
+        const activitiesCollection = getActivitiesCollection();
+        await activitiesCollection.create((activity: any) => {
+          activity.type = 'schedule';
+          activity.title = 'Visit Archived';
+          activity.description = `Reason: ${reason}`;
+          activity.siteId = (visit as any).siteId || '';
+          activity.timestamp = Date.now();
+          activity.icon = 'archive';
+          activity.archived = false;
+          activity.synced = false;
+          // STORE THE VISIT ID TO ENABLE UNARCHIVING
+          activity.metadata = JSON.stringify({ archivedVisitId: visitId });
+        });
+      });
+      refresh();
+      return true;
+    } catch (error) {
+      console.error('Error archiving visit:', error);
+      return false;
+    }
+  }, [refresh]);
+
+  const unarchiveVisit = useCallback(async (visitId: string) => {
+    try {
+      const schedulesCollection = database.collections.get('schedules');
+      const visit = await schedulesCollection.find(visitId);
+      
+      await database.write(async () => {
+        await visit.update((v: any) => {
+          v.archived = false;
+          v.notes = v.notes ? `${v.notes}\n\n[Unarchived]` : `[Unarchived]`;
+        });
+        
+        const activitiesCollection = getActivitiesCollection();
+        await activitiesCollection.create((activity: any) => {
+          activity.type = 'schedule';
+          activity.title = 'Visit Unarchived';
+          activity.description = `Restored visit to active schedule`;
+          activity.siteId = (visit as any).siteId || '';
+          activity.timestamp = Date.now();
+          activity.icon = 'calendar-check';
+          activity.archived = false;
+          activity.synced = false;
+        });
+      });
+      refresh();
+      return true;
+    } catch (error) {
+      console.error('Error unarchiving visit:', error);
+      return false;
+    }
+  }, [refresh]);
+
   const canModifyVisit = useCallback(
-    (visitId: string): boolean => {
-      return visitId.startsWith('schedule_user_');
-    },
+    (visitId: string): boolean => visitId.startsWith('schedule_user_'),
     []
   );
 
-  /**
-   * Get visit by ID
-   */
   const getVisitById = useCallback(
-    (visitId: string): ScheduleVisit | undefined => {
-      return allVisits.find((v) => v.id === visitId);
-    },
+    (visitId: string): ScheduleVisit | undefined => allVisits.find((v) => v.id === visitId),
     [allVisits]
   );
 
-  /**
-   * Get visits for a specific site
-   */
   const getVisitsBySite = useCallback(
-    (siteId: string): ScheduleVisit[] => {
-      return allVisits.filter((v) => v.siteId === siteId);
-    },
+    (siteId: string): ScheduleVisit[] => allVisits.filter((v) => v.siteId === siteId),
     [allVisits]
   );
 
-  /**
-   * Get upcoming visits (from today onwards)
-   */
   const getUpcomingVisits = useCallback((): ScheduleVisit[] => {
     const today = new Date().toISOString().split('T')[0];
     return allVisits.filter((v) => v.date >= today);
   }, [allVisits]);
 
   return {
-    // Data
     userVisits,
     allVisits,
     upcomingVisits: getUpcomingVisits(),
     isLoading,
-
-    // Actions
     scheduleVisit,
     editVisit,
     removeVisit,
+    checkInVisit,
+    completeVisit,
+    archiveVisit,
+    unarchiveVisit,
     canModifyVisit,
     getVisitById,
     getVisitsBySite,
