@@ -23,97 +23,47 @@ export default function ScheduleScreen() {
   const insets = useSafeAreaInsets();
   const [syncing, setSyncing] = useState(false);
   
-  const { 
-    allVisits, 
-    removeVisit, 
-    canModifyVisit, 
-    checkInVisit, 
-    completeVisit, 
-    archiveVisit 
-  } = useScheduleManagement();
-  
+  const { allVisits, removeVisit, canModifyVisit, checkInVisit, completeVisit, archiveVisit } = useScheduleManagement();
   const { allSites } = useSiteManagement();
   
   const [archiveReason, setArchiveReason] = useState('');
   const [visitToArchive, setVisitToArchive] = useState<ScheduleVisit | null>(null);
 
   const [dialogConfig, setDialogConfig] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-    type?: 'success' | 'error' | 'info';
-    onConfirm?: () => void;
-  }>({
-    visible: false,
-    title: '',
-    message: '',
-    type: 'info',
-  });
+    visible: boolean; title: string; message: string; type?: 'success' | 'error' | 'info'; onConfirm?: () => void;
+  }>({ visible: false, title: '', message: '', type: 'info' });
 
   const handleSyncCalendar = async () => {
     setSyncing(true);
     const { status } = await Calendar.requestCalendarPermissionsAsync();
-    if (status === 'granted') {
-      setTimeout(() => {
-        setSyncing(false);
-      }, 1500);
-    } else {
-      setSyncing(false);
-    }
+    if (status === 'granted') setTimeout(() => setSyncing(false), 1500);
+    else setSyncing(false);
   };
 
   const handleDeleteVisit = (visit: ScheduleVisit) => {
     const site = allSites.find((s) => s.id === visit.siteId);
-    
     setDialogConfig({
-      visible: true,
-      title: 'Delete Visit?',
+      visible: true, title: 'Delete Visit?',
       message: `Are you sure you want to delete "${visit.title}"${site ? ` at ${site.name}` : ''}? This action cannot be undone.`,
       type: 'error',
       onConfirm: async () => {
         const success = await removeVisit(visit.id, visit.title);
-        if (success) {
-          setDialogConfig({
-            visible: true,
-            title: 'Success',
-            message: 'Visit deleted successfully',
-            type: 'success',
-          });
-        } else {
-          setDialogConfig({
-            visible: true,
-            title: 'Error',
-            message: 'Could not delete this visit.',
-            type: 'error',
-          });
-        }
+        if (success) setDialogConfig({ visible: true, title: 'Success', message: 'Visit deleted successfully', type: 'success' });
+        else setDialogConfig({ visible: true, title: 'Error', message: 'Could not delete this visit.', type: 'error' });
       },
     });
   };
 
   const handleArchiveSubmit = async () => {
     if (!visitToArchive) return;
-    
     if (!archiveReason.trim()) {
-      setDialogConfig({
-        visible: true,
-        title: 'Reason Required',
-        message: 'You must provide a reason for archiving this visit.',
-        type: 'warning',
-      });
+      setDialogConfig({ visible: true, title: 'Reason Required', message: 'You must provide a reason for archiving this visit.', type: 'warning' });
       return;
     }
-
     const success = await archiveVisit(visitToArchive.id, archiveReason);
     if (success) {
-      setVisitToArchive(null);
-      setArchiveReason('');
-      setDialogConfig({
-        visible: true,
-        title: 'Archived',
-        message: 'Visit has been successfully archived.',
-        type: 'success',
-      });
+      setVisitToArchive(null); setArchiveReason('');
+      setDialogConfig({ visible: true, title: 'Archived', message: 'Visit has been successfully archived.', type: 'success' });
     }
   };
 
@@ -124,12 +74,8 @@ export default function ScheduleScreen() {
   };
 
   const getDateBadgeStyle = (date: string) => {
-    if (isToday(date)) {
-      return { backgroundColor: colors.primaryContainer, color: colors.onPrimaryContainer };
-    }
-    if (isTomorrow(date)) {
-      return { backgroundColor: colors.secondaryContainer, color: colors.onSecondaryContainer };
-    }
+    if (isToday(date)) return { backgroundColor: colors.primaryContainer, color: colors.onPrimaryContainer };
+    if (isTomorrow(date)) return { backgroundColor: colors.secondaryContainer, color: colors.onSecondaryContainer };
     return { backgroundColor: colors.surfaceContainerHigh, color: colors.onSurfaceVariant };
   };
 
@@ -139,42 +85,21 @@ export default function ScheduleScreen() {
     const status = item.status || 'pending';
 
     return (
-      <Animated.View
-        entering={FadeInUp.duration(M3Motion.duration.medium).delay(index * 50)}
-        style={[
-          styles.visitCard,
-          {
-            backgroundColor: colors.surfaceContainer,
-            shadowColor: colors.shadow,
-          },
-        ]}
-      >
+      <Animated.View entering={FadeInUp.duration(M3Motion.duration.medium).delay(index * 50)} style={[styles.visitCard, { backgroundColor: colors.surfaceContainer, shadowColor: colors.shadow }]}>
         <View style={styles.visitContent}>
           <View style={styles.cardHeader}>
             <View style={styles.dateSection}>
               <View style={[styles.dateBadge, { backgroundColor: badgeStyle.backgroundColor }]}>
-                <StyledText style={[styles.dateBadgeText, { color: badgeStyle.color }]}>
-                  {getDateLabel(item.date)}
-                </StyledText>
+                <StyledText style={[styles.dateBadgeText, { color: badgeStyle.color }]}>{getDateLabel(item.date)}</StyledText>
               </View>
-              <StyledText style={[styles.timeText, { color: colors.onSurfaceVariant }]}>
-                {item.time}
-              </StyledText>
+              <StyledText style={[styles.timeText, { color: colors.onSurfaceVariant }]}>{item.time}</StyledText>
             </View>
-            
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={[styles.statusBadge, { backgroundColor: status === 'completed' ? colors.primaryContainer : colors.surfaceVariant }]}>
-                <StyledText style={{ color: status === 'completed' ? colors.primary : colors.onSurfaceVariant, fontSize: 12, fontWeight: '600', textTransform: 'capitalize' }}>
-                  {status.replace('-', ' ')}
-                </StyledText>
+                <StyledText style={{ color: status === 'completed' ? colors.primary : colors.onSurfaceVariant, fontSize: 12, fontWeight: '600', textTransform: 'capitalize' }}>{status.replace('-', ' ')}</StyledText>
               </View>
-
               {canModifyVisit(item.id) && (
-                <TouchableOpacity
-                  onPress={() => handleDeleteVisit(item)}
-                  style={[styles.deleteIconButton, { backgroundColor: colors.errorContainer }]}
-                  activeOpacity={0.7}
-                >
+                <TouchableOpacity onPress={() => handleDeleteVisit(item)} style={[styles.deleteIconButton, { backgroundColor: colors.errorContainer }]} activeOpacity={0.7}>
                   <Ionicons name="trash-outline" size={18} color={colors.error} />
                 </TouchableOpacity>
               )}
@@ -184,94 +109,44 @@ export default function ScheduleScreen() {
           <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
           
           <View style={styles.visitDetails}>
-            <StyledText style={[styles.visitTitle, { color: colors.onSurface }]}>
-              {item.title} {item.isRequiem ? '(Other Reason)' : ''}
-            </StyledText>
+            <StyledText style={[styles.visitTitle, { color: colors.onSurface }]}>{item.title} {item.isRequiem ? '(Other Reason)' : ''}</StyledText>
             {site && (
               <View style={styles.siteLocation}>
-                <MaterialCommunityIcons
-                  name="map-marker"
-                  size={16}
-                  color={colors.outline}
-                  style={styles.locationIcon}
-                />
-                <StyledText style={[styles.siteText, { color: colors.onSurfaceVariant }]}>
-                  {site.name}
-                </StyledText>
+                <MaterialCommunityIcons name="map-marker" size={16} color={colors.outline} style={styles.locationIcon} />
+                <StyledText style={[styles.siteText, { color: colors.onSurfaceVariant }]}>{site.name}</StyledText>
               </View>
             )}
             
             <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.tertiaryContainer }]}
-                onPress={() => router.push('/(tabs)/inspection')}
-                activeOpacity={0.7}
-              >
-                <MaterialCommunityIcons
-                  name="clipboard-text"
-                  size={16}
-                  color={colors.onTertiaryContainer}
-                />
-                <StyledText
-                  style={[styles.actionButtonText, { color: colors.onTertiaryContainer }]}
-                >
-                  Inspection
-                </StyledText>
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.tertiaryContainer }]} onPress={() => router.push('/(tabs)/inspection')} activeOpacity={0.7}>
+                <MaterialCommunityIcons name="clipboard-text" size={16} color={colors.onTertiaryContainer} />
+                <StyledText style={[styles.actionButtonText, { color: colors.onTertiaryContainer }]}>Inspection</StyledText>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.secondaryContainer }]}
-                onPress={() => site && router.push(`/map-navigation?siteId=${site.id}`)}
-                activeOpacity={0.7}
-              >
-                <MaterialCommunityIcons
-                  name="navigation"
-                  size={16}
-                  color={colors.onSecondaryContainer}
-                />
-                <StyledText
-                  style={[styles.actionButtonText, { color: colors.onSecondaryContainer }]}
-                >
-                  Navigate
-                </StyledText>
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.secondaryContainer }]} onPress={() => site && router.push(`/map-navigation?siteId=${site.id}`)} activeOpacity={0.7}>
+                <MaterialCommunityIcons name="navigation" size={16} color={colors.onSecondaryContainer} />
+                <StyledText style={[styles.actionButtonText, { color: colors.onSecondaryContainer }]}>Navigate</StyledText>
               </TouchableOpacity>
             </View>
 
             {/* STATUS PROGRESSION ACTIONS */}
             <View style={[styles.divider, { backgroundColor: colors.outlineVariant, marginTop: 12, marginBottom: 12 }]} />
             <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-              
               {status === 'pending' && (
-                <TouchableOpacity 
-                  style={[styles.statusActionButton, { backgroundColor: colors.primary }]} 
-                  onPress={() => checkInVisit(item.id)}
-                >
+                <TouchableOpacity style={[styles.statusActionButton, { backgroundColor: colors.primary }]} onPress={() => checkInVisit(item.id)}>
                   <MaterialCommunityIcons name="map-marker-check" size={18} color={colors.onPrimary} />
                   <StyledText style={[styles.statusActionText, { color: colors.onPrimary }]}>Check-in</StyledText>
                 </TouchableOpacity>
               )}
-              
               {status === 'in-progress' && (
-                <TouchableOpacity 
-                  style={[styles.statusActionButton, { backgroundColor: colors.secondary }]} 
-                  onPress={() => completeVisit(item.id)}
-                >
+                <TouchableOpacity style={[styles.statusActionButton, { backgroundColor: colors.secondary }]} onPress={() => completeVisit(item.id)}>
                   <MaterialCommunityIcons name="check-circle-outline" size={18} color={colors.onSecondary} />
                   <StyledText style={[styles.statusActionText, { color: colors.onSecondary }]}>Complete Work</StyledText>
                 </TouchableOpacity>
               )}
-
-              {/* ARCHIVE BUTTON IS NOW ALWAYS VISIBLE */}
-              <TouchableOpacity 
-                style={[styles.statusActionButton, { backgroundColor: colors.surfaceContainerHighest, borderWidth: 1, borderColor: colors.outline }]} 
-                onPress={() => {
-                  setVisitToArchive(item);
-                  setArchiveReason('');
-                }}
-              >
+              <TouchableOpacity style={[styles.statusActionButton, { backgroundColor: colors.surfaceContainerHighest, borderWidth: 1, borderColor: colors.outline }]} onPress={() => { setVisitToArchive(item); setArchiveReason(''); }}>
                 <MaterialCommunityIcons name="archive-outline" size={18} color={colors.onSurface} />
                 <StyledText style={[styles.statusActionText, { color: colors.onSurface }]}>Archive</StyledText>
               </TouchableOpacity>
-              
             </View>
 
           </View>
@@ -283,43 +158,12 @@ export default function ScheduleScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + M3Spacing.lg }]}>
-        <StyledText
-          style={[{ ...M3Typography.headline.large, color: colors.onSurface }, styles.headerTitle]}
-        >
-          My Visits
-        </StyledText>
-        <StyledText
-          style={[
-            { ...M3Typography.body.large, color: colors.onSurfaceVariant },
-            styles.headerSubtitle,
-          ]}
-        >
-          {allVisits.length} scheduled maintenance visit{allVisits.length !== 1 ? 's' : ''}
-        </StyledText>
-        <AnimatedTouchableOpacity
-          entering={FadeInUp.duration(M3Motion.duration.medium).delay(100)}
-          style={[
-            styles.syncButton,
-            {
-              backgroundColor: colors.primary,
-              shadowColor: colors.shadow,
-              opacity: syncing ? 0.6 : 1,
-            },
-          ]}
-          onPress={handleSyncCalendar}
-          disabled={syncing}
-          activeOpacity={0.8}
-        >
+        <StyledText style={[{ ...M3Typography.headline.large, color: colors.onSurface }, styles.headerTitle]}>My Visits</StyledText>
+        <StyledText style={[{ ...M3Typography.body.large, color: colors.onSurfaceVariant }, styles.headerSubtitle]}>{allVisits.length} scheduled maintenance visit{allVisits.length !== 1 ? 's' : ''}</StyledText>
+        <AnimatedTouchableOpacity entering={FadeInUp.duration(M3Motion.duration.medium).delay(100)} style={[styles.syncButton, { backgroundColor: colors.primary, shadowColor: colors.shadow, opacity: syncing ? 0.6 : 1 }]} onPress={handleSyncCalendar} disabled={syncing} activeOpacity={0.8}>
           <View style={styles.syncButtonContent}>
-            <MaterialCommunityIcons
-              name={syncing ? 'sync' : 'calendar-sync'}
-              size={20}
-              color={colors.onPrimary}
-              style={styles.syncIcon}
-            />
-            <StyledText style={[styles.syncButtonText, { color: colors.onPrimary }]}>
-              {syncing ? 'Syncing...' : 'Sync to Calendar'}
-            </StyledText>
+            <MaterialCommunityIcons name={syncing ? 'sync' : 'calendar-sync'} size={20} color={colors.onPrimary} style={styles.syncIcon} />
+            <StyledText style={[styles.syncButtonText, { color: colors.onPrimary }]}>{syncing ? 'Syncing...' : 'Sync to Calendar'}</StyledText>
           </View>
         </AnimatedTouchableOpacity>
       </View>
@@ -328,88 +172,36 @@ export default function ScheduleScreen() {
         data={allVisits}
         renderItem={renderVisit}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: insets.bottom + M3Spacing.xl + 80 },
-        ]}
+        
+        // --- Aggressive FlatList Optimizations ---
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews={true}
+        // -----------------------------------------
+
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + M3Spacing.xl + 80 }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons
-              name="calendar-blank"
-              size={64}
-              color={colors.onSurfaceVariant}
-            />
-            <StyledText
-              style={[{ ...M3Typography.title.large, color: colors.onSurface }, styles.emptyTitle]}
-            >
-              No visits scheduled
-            </StyledText>
-            <StyledText
-              style={[
-                { ...M3Typography.body.medium, color: colors.onSurfaceVariant },
-                styles.emptyText,
-              ]}
-            >
-              Add a visit to get started
-            </StyledText>
+            <MaterialCommunityIcons name="calendar-blank" size={64} color={colors.onSurfaceVariant} />
+            <StyledText style={[{ ...M3Typography.title.large, color: colors.onSurface }, styles.emptyTitle]}>No visits scheduled</StyledText>
+            <StyledText style={[{ ...M3Typography.body.medium, color: colors.onSurfaceVariant }, styles.emptyText]}>Add a visit to get started</StyledText>
           </View>
         }
       />
 
-      {/* Floating Action Button (FAB) */}
-      <Animated.View
-        entering={FadeInUp.duration(M3Motion.duration.medium).delay(200)}
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.primaryContainer,
-            shadowColor: colors.shadow,
-            bottom: insets.bottom + 80,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={styles.fabTouchable}
-          onPress={() => router.push('/add-visit')}
-          activeOpacity={0.8}
-        >
+      <Animated.View entering={FadeInUp.duration(M3Motion.duration.medium).delay(200)} style={[styles.fab, { backgroundColor: colors.primaryContainer, shadowColor: colors.shadow, bottom: insets.bottom + 80 }]}>
+        <TouchableOpacity style={styles.fabTouchable} onPress={() => router.push('/add-visit')} activeOpacity={0.8}>
           <MaterialCommunityIcons name="plus" size={28} color={colors.onPrimaryContainer} />
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Archive Reason Dialog */}
-      <M3ConfirmDialog
-        visible={!!visitToArchive}
-        title="Archive Visit"
-        message={`Please provide a reason for archiving "${visitToArchive?.title}".`}
-        icon="archive"
-        iconColor={colors.primary}
-        onDismiss={() => setVisitToArchive(null)}
-        buttons={[
-          { text: 'Cancel', style: 'cancel', onPress: () => setVisitToArchive(null) },
-          { text: 'Archive', style: 'default', onPress: handleArchiveSubmit, disabled: !archiveReason.trim() }
-        ]}
-      >
-        <TextInput
-          style={[styles.reasonInput, { backgroundColor: colors.surface, color: colors.onSurface, borderColor: colors.outline }]}
-          placeholder="e.g. Work fully complete, postponed..."
-          placeholderTextColor={colors.onSurfaceVariant}
-          value={archiveReason}
-          onChangeText={setArchiveReason}
-          multiline
-        />
+      <M3ConfirmDialog visible={!!visitToArchive} title="Archive Visit" message={`Please provide a reason for archiving "${visitToArchive?.title}".`} icon="archive" iconColor={colors.primary} onDismiss={() => setVisitToArchive(null)} buttons={[ { text: 'Cancel', style: 'cancel', onPress: () => setVisitToArchive(null) }, { text: 'Archive', style: 'default', onPress: handleArchiveSubmit, disabled: !archiveReason.trim() } ]}>
+        <TextInput style={[styles.reasonInput, { backgroundColor: colors.surface, color: colors.onSurface, borderColor: colors.outline }]} placeholder="e.g. Work fully complete, postponed..." placeholderTextColor={colors.onSurfaceVariant} value={archiveReason} onChangeText={setArchiveReason} multiline />
       </M3ConfirmDialog>
 
-      {/* Error/Info Dialog */}
-      <M3ErrorDialog
-        visible={dialogConfig.visible}
-        title={dialogConfig.title}
-        message={dialogConfig.message}
-        type={dialogConfig.type}
-        onDismiss={() => setDialogConfig({ ...dialogConfig, visible: false })}
-        onConfirm={dialogConfig.onConfirm}
-      />
+      <M3ErrorDialog visible={dialogConfig.visible} title={dialogConfig.title} message={dialogConfig.message} type={dialogConfig.type} onDismiss={() => setDialogConfig({ ...dialogConfig, visible: false })} onConfirm={dialogConfig.onConfirm} />
     </View>
   );
 }

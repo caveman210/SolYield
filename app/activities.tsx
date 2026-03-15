@@ -35,7 +35,6 @@ export default function ActivitiesScreen() {
   const { createActivity } = useActivityActions();
   const { syncDataManually, isSyncing, unsyncedCount, lastSyncTime, isOnline } = useOfflineSync();
 
-  // ONLY 1 MAP RENDER PER SCREEN - Removes O(N) lag instantly!
   const contextMap = useActivityContextMap(filteredActivities);
 
   const { unarchiveSite } = useSites(true); 
@@ -153,11 +152,14 @@ export default function ActivitiesScreen() {
             />
           </View>
         )}
-        // Aggressive FlatList Performance Optimizations
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
+        
+        // --- Aggressive FlatList Optimizations ---
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
         windowSize={5}
         removeClippedSubviews={true}
+        // -----------------------------------------
+
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + M3Spacing.xl }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={

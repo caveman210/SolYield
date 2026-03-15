@@ -11,7 +11,7 @@ export interface ChartDataPoint {
 }
 
 export interface WeeklyData {
-  periodLabel: string; // e.g., "Mar 17 - 24, 2026"
+  periodLabel: string;
   sortKey: string;
   year: number;
   data: ChartDataPoint[];
@@ -32,16 +32,12 @@ export interface UsePerformanceDataResult {
   getChartDataForPeriod: (periodIndex: number, siteId?: string | null) => ChartDataPoint[];
 }
 
-/**
- * Helper to get week boundaries and labels (Monday - Sunday)
- */
 function getWeekInfo(dateStr: string) {
-  // Parse safely to avoid timezone offset bugs
   const parts = dateStr.split('-');
   const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
   
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust so Monday is start of week
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   
   const start = new Date(d.getFullYear(), d.getMonth(), diff);
   const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
@@ -59,15 +55,11 @@ function getWeekInfo(dateStr: string) {
     label = `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`;
   }
   
-  // Create sortable key based on the Monday of that week
   const sortKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
   
   return { label, sortKey, year };
 }
 
-/**
- * Hook to query and aggregate performance data from WatermelonDB.
- */
 export function usePerformanceData(): UsePerformanceDataResult {
   const database = useDatabase();
   const [records, setRecords] = useState<PerformanceRecord[]>([]);
@@ -76,7 +68,6 @@ export function usePerformanceData(): UsePerformanceDataResult {
 
   useEffect(() => {
     let mounted = true;
-
     const loadRecords = async () => {
       try {
         setIsLoading(true);
@@ -96,16 +87,12 @@ export function usePerformanceData(): UsePerformanceDataResult {
         }
       }
     };
-
     loadRecords();
-
     return () => { mounted = false; };
   }, [database]);
 
-  // Group records by Week
   const weeklyGroups = useMemo(() => {
     const grouped: { [key: string]: { records: PerformanceRecord[], label: string, year: number } } = {};
-
     records.forEach((record) => {
       const { label, sortKey, year } = getWeekInfo(record.date);
       if (!grouped[sortKey]) {
@@ -116,17 +103,12 @@ export function usePerformanceData(): UsePerformanceDataResult {
 
     return Object.entries(grouped)
       .map(([sortKey, groupData]) => {
-        // Sort chronologically within the week
         const sortedRecords = groupData.records.sort((a, b) => a.date.localeCompare(b.date));
-        
-        const data: ChartDataPoint[] = sortedRecords.map((record) => {
-          return {
-            date: record.date,
-            value: record.energyGeneratedKwh,
-            label: record.date.split('-')[2],
-          };
-        });
-
+        const data: ChartDataPoint[] = sortedRecords.map((record) => ({
+          date: record.date,
+          value: record.energyGeneratedKwh,
+          label: record.date.split('-')[2],
+        }));
         return {
           periodLabel: groupData.label,
           sortKey,
@@ -134,7 +116,7 @@ export function usePerformanceData(): UsePerformanceDataResult {
           data,
         };
       })
-      .sort((a, b) => b.sortKey.localeCompare(a.sortKey)); // Sort newest week first
+      .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
   }, [records]);
 
   const getStatsForPeriod = (periodIndex: number, siteId?: string | null): PerformanceStats => {
@@ -142,7 +124,6 @@ export function usePerformanceData(): UsePerformanceDataResult {
       return { avgGeneration: 0, peakPower: 0, totalEnergy: 0, efficiency: 0 };
     }
     const periodData = weeklyGroups[periodIndex];
-    
     let relevantRecords = records.filter((r) => {
       const { sortKey } = getWeekInfo(r.date);
       if (siteId) return sortKey === periodData.sortKey && r.siteId === siteId;
@@ -167,11 +148,8 @@ export function usePerformanceData(): UsePerformanceDataResult {
   };
 
   const getChartDataForPeriod = (periodIndex: number, siteId?: string | null): ChartDataPoint[] => {
-    if (periodIndex < 0 || periodIndex >= weeklyGroups.length) {
-      return [];
-    }
+    if (periodIndex < 0 || periodIndex >= weeklyGroups.length) return [];
     const periodData = weeklyGroups[periodIndex];
-    
     let siteRecords = records.filter((r) => {
       const { sortKey } = getWeekInfo(r.date);
       if (siteId) return sortKey === periodData.sortKey && r.siteId === siteId;
@@ -187,11 +165,5 @@ export function usePerformanceData(): UsePerformanceDataResult {
       }));
   };
 
-  return {
-    weeklyGroups,
-    isLoading,
-    error,
-    getStatsForPeriod,
-    getChartDataForPeriod,
-  };
+  return { weeklyGroups, isLoading, error, getStatsForPeriod, getChartDataForPeriod };
 }

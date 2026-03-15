@@ -1,10 +1,6 @@
 /**
  * Performance Analytics Screen
- * * M3Expressive themed performance dashboard with:
- * - Site dropdown selector (All Sites aggregate + individual sites)
- * - Aggregated data visualization for all sites combined
- * - Material You dynamic colors throughout
- * - PDF export with comprehensive reports
+ * Corrected: Scope for noOfSections fixed and Reanimated warnings resolved.
  */
 
 import React, { useState, useMemo } from 'react';
@@ -14,13 +10,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Animated as RNAnimated,
-  Dimensions
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { BarChart, PieChart } from 'react-native-gifted-charts';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -32,27 +26,22 @@ import { M3Typography, M3Shape, M3Elevation, M3Spacing, M3Motion } from '../lib/
 import { useSites } from '../lib/hooks/useSites';
 import { usePerformanceData } from '../lib/hooks/usePerformanceData';
 import { PERFORMANCE_DATA } from '../lib/data/performanceData';
-import { PDF_COLORS } from '../lib/design/staticColors';
 import { Site } from '../lib/types';
-
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+import { generatePerformancePDF } from '../lib/utils/pdfGenerator';
 
 export default function PerformanceScreen() {
   const colors = useMaterialYouColors();
   const animatedColors = useAnimatedMaterialYouColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { sites, isLoading: sitesLoading } = useSites();
-  
-  // Consuming the newly structured weekly hooks
-  const {
-    weeklyGroups,
-    isLoading: performanceLoading,
-    getStatsForPeriod,
-    getChartDataForPeriod,
-  } = usePerformanceData();
+
+  const { sites } = useSites();
+  const { weeklyGroups, getStatsForPeriod, getChartDataForPeriod } = usePerformanceData();
 
   const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+  // Chart Configuration Constants
+  const noOfSections = 4;
 
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [showSiteSelector, setShowSiteSelector] = useState(false);
@@ -63,14 +52,8 @@ export default function PerformanceScreen() {
     title: string;
     message: string;
     type?: 'success' | 'error' | 'info';
-  }>({
-    visible: false,
-    title: '',
-    message: '',
-    type: 'info',
-  });
+  }>({ visible: false, title: '', message: '', type: 'info' });
 
-  // Convert WatermelonDB sites to legacy Site format
   const allSites: Site[] = useMemo(
     () =>
       sites.map((s) => ({
@@ -83,149 +66,98 @@ export default function PerformanceScreen() {
     [sites]
   );
 
-  // Get selected site or null for "All Sites"
-  const selectedSite = selectedSiteId ? allSites.find((s) => s.id === selectedSiteId) : null;
+  const selectedSite = useMemo(
+    () => (selectedSiteId ? allSites.find((s) => s.id === selectedSiteId) || null : null),
+    [selectedSiteId, allSites]
+  );
+
   const displayName = selectedSite ? selectedSite.name : 'All Sites Combined';
   const displayCapacity = selectedSite ? selectedSite.capacity : `${allSites.length} Sites`;
 
-  // Get current period (weekly) data
   const currentPeriod = weeklyGroups[currentPeriodIndex];
-  const dailyData = currentPeriod ? getChartDataForPeriod(currentPeriodIndex, selectedSiteId) : [];
-  const stats = currentPeriod ? getStatsForPeriod(currentPeriodIndex, selectedSiteId) : {
-    avgGeneration: 0,
-    peakPower: 0,
-    totalEnergy: 0,
-    efficiency: 0,
-  };
+  const dailyData = useMemo(
+    () => (currentPeriod ? getChartDataForPeriod(currentPeriodIndex, selectedSiteId) : []),
+    [currentPeriod, currentPeriodIndex, selectedSiteId, getChartDataForPeriod]
+  );
+  const stats = useMemo(
+    () =>
+      currentPeriod
+        ? getStatsForPeriod(currentPeriodIndex, selectedSiteId)
+        : { avgGeneration: 0, peakPower: 0, totalEnergy: 0, efficiency: 0 },
+    [currentPeriod, currentPeriodIndex, selectedSiteId, getStatsForPeriod]
+  );
 
-  // Period navigation
-  const goToPreviousPeriod = () => {
-    if (currentPeriodIndex > 0) setCurrentPeriodIndex(currentPeriodIndex - 1);
-  };
+  const goToPreviousPeriod = () => { if (currentPeriodIndex > 0) setCurrentPeriodIndex(currentPeriodIndex - 1); };
+  const goToNextPeriod = () => { if (currentPeriodIndex < weeklyGroups.length - 1) setCurrentPeriodIndex(currentPeriodIndex + 1); };
 
-  const goToNextPeriod = () => {
-    if (currentPeriodIndex < weeklyGroups.length - 1) setCurrentPeriodIndex(currentPeriodIndex + 1);
-  };
+  const barData = useMemo(
+    () =>
+      dailyData.map((day) => {
+        const parts = day.date.split('-');
+        const date = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+        const dayNum = date.getDate();
 
-  // Bar chart data with Material You themed colors
-  const barData = dailyData.map((day) => {
-    // Parse safely to avoid timezone shift
-    const parts = day.date.split('-');
-    const date = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    
-    // Create dual-line label: "Mon \n 17"
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-    const dayNum = date.getDate();
-    const value = day.value;
+        const maxExpected = 60;
+        const ratio = day.value / maxExpected;
+        let color = colors.tertiary;
+        if (ratio >= 0.8) color = colors.primary;
+        else if (ratio >= 0.5) color = colors.secondary;
+        else color = colors.error;
 
-    const maxExpected = 60;
-    const ratio = value / maxExpected;
-    let color = colors.tertiary; 
-    if (ratio >= 0.8) color = colors.primary; 
-    else if (ratio >= 0.5) color = colors.secondary; 
-    else color = colors.error; 
+        return { value: day.value, label: `${dayName}\n${dayNum}`, frontColor: color };
+      }),
+    [dailyData, colors]
+  );
 
-    return {
-      value,
-      label: `${dayName}\n${dayNum}`,
-      frontColor: color,
-    };
-  });
+  const { step, yAxisMax } = useMemo(() => {
+    const rawMax = dailyData.length > 0 ? Math.max(...dailyData.map((d) => d.value)) : 10;
+    let calculatedStep = Math.ceil(Math.max(rawMax, 10) / noOfSections);
+    calculatedStep = Math.ceil(calculatedStep / 5) * 5;
+    return { step: calculatedStep, yAxisMax: calculatedStep * noOfSections };
+  }, [dailyData]);
 
-  // --- CHART SCALING & MATH LOGIC ---
-  const noOfSections = 4;
-  const rawMax = dailyData.length > 0 ? Math.max(...dailyData.map(d => d.value)) : 10;
-  
-  // Round the step to a clean multiple of 5 or 10
-  let step = Math.ceil(Math.max(rawMax, 10) / noOfSections);
-  step = Math.ceil(step / 5) * 5; 
-  const yAxisMax = step * noOfSections;
-
-  // Safe width calculation leaving room for the Y-Axis Labels
-  const safeChartWidth = SCREEN_WIDTH - (M3Spacing.lg * 2) - 60;
-
-  // Safe Pie Chart sizing
+  const safeChartWidth = SCREEN_WIDTH - M3Spacing.lg * 2 - 60;
   const pieRadius = Math.min(SCREEN_WIDTH * 0.25, 90);
   const innerRadius = pieRadius * 0.65;
 
-  const pieData = [
-    { value: PERFORMANCE_DATA.overPerformingDays, color: colors.primary, label: 'Over' },
-    { value: PERFORMANCE_DATA.normalDays, color: colors.secondary, label: 'Normal' },
-    { value: PERFORMANCE_DATA.underPerformingDays, color: colors.tertiary, label: 'Under' },
-    { value: PERFORMANCE_DATA.zeroEnergyDays, color: colors.error, label: 'Zero' },
-  ].filter((item) => item.value > 0);
+  const pieData = useMemo(
+    () =>
+      [
+        { value: PERFORMANCE_DATA.overPerformingDays, color: colors.primary, label: 'Over' },
+        { value: PERFORMANCE_DATA.normalDays, color: colors.secondary, label: 'Normal' },
+        { value: PERFORMANCE_DATA.underPerformingDays, color: colors.tertiary, label: 'Under' },
+        { value: PERFORMANCE_DATA.zeroEnergyDays, color: colors.error, label: 'Zero' },
+      ].filter((item) => item.value > 0),
+    [colors]
+  );
 
-  const generatePDF = async () => {
+  const handleGeneratePDF = async () => {
     setGeneratingPDF(true);
-
     try {
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 40px; color: ${PDF_COLORS.section.text}; background: white; }
-              .header { border-bottom: 4px solid ${PDF_COLORS.header.background}; padding-bottom: 20px; margin-bottom: 30px; }
-              .header h1 { color: ${PDF_COLORS.header.background}; font-size: 28px; margin-bottom: 8px; }
-              .header .subtitle { color: ${PDF_COLORS.section.text}; opacity: 0.7; font-size: 16px; }
-              .section { margin-bottom: 30px; }
-              .section h2 { color: ${PDF_COLORS.section.text}; font-size: 20px; margin-bottom: 16px; border-left: 4px solid ${PDF_COLORS.chart.primary}; padding-left: 12px; }
-              .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 30px; }
-              .stat-card { background: ${PDF_COLORS.section.background}; padding: 20px; border-radius: 12px; border-left: 4px solid ${PDF_COLORS.chart.primary}; }
-              .stat-card .label { color: ${PDF_COLORS.section.text}; opacity: 0.7; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
-              .stat-card .value { color: ${PDF_COLORS.section.text}; font-size: 24px; font-weight: bold; }
-              .stat-card .unit { color: ${PDF_COLORS.section.text}; opacity: 0.6; font-size: 14px; }
-              .footer { margin-top: 40px; padding-top: 20px; border-top: 2px solid #E0E0E0; text-align: center; color: #757575; font-size: 12px; }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h1>${displayName} - Performance Report</h1>
-              <p class="subtitle">Generated on ${new Date().toLocaleDateString()}</p>
-              <p class="subtitle">Capacity: ${displayCapacity}</p>
-            </div>
-            <div class="section">
-              <h2>Performance Summary</h2>
-              <div class="stats-grid">
-                <div class="stat-card">
-                  <div class="label">Average Generation</div>
-                  <div class="value">${stats.avgGeneration.toFixed(1)}</div>
-                  <div class="unit">kWh/day</div>
-                </div>
-                <div class="stat-card">
-                  <div class="label">Peak Generation</div>
-                  <div class="value">${stats.peakPower.toFixed(1)}</div>
-                  <div class="unit">kWh</div>
-                </div>
-                <div class="stat-card">
-                  <div class="label">Total Energy</div>
-                  <div class="value">${stats.totalEnergy.toFixed(1)}</div>
-                  <div class="unit">kWh</div>
-                </div>
-              </div>
-            </div>
-            <div class="footer">
-              <p>SolYield - Solar Farm Management System</p>
-              <p>This report is generated automatically by the mobile application</p>
-            </div>
-          </body>
-        </html>
-      `;
+      const { uri, shared } = await generatePerformancePDF(
+        selectedSite,
+        currentPeriod?.periodLabel || 'Report',
+        stats,
+        dailyData
+      );
 
-      const { uri } = await Print.printToFileAsync({ html: htmlContent });
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri);
-        setAlertConfig({ visible: true, title: 'Success', message: 'PDF report has been generated and shared!', type: 'success' });
-      } else {
-        setAlertConfig({ visible: true, title: 'PDF Generated', message: `Report saved at: ${uri}`, type: 'success' });
+      if (shared) {
+        setAlertConfig({
+          visible: true,
+          title: 'Success',
+          message: 'Professional audit report generated and shared!',
+          type: 'success',
+        });
       }
     } catch (error) {
-      console.error('Error generating PDF:', error);
-      setAlertConfig({ visible: true, title: 'Error', message: 'Failed to generate PDF report', type: 'error' });
+      console.error('PDF Generation Error:', error);
+      setAlertConfig({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to generate professional audit report',
+        type: 'error',
+      });
     } finally {
       setGeneratingPDF(false);
     }
@@ -233,7 +165,6 @@ export default function PerformanceScreen() {
 
   return (
     <RNAnimated.View style={{ flex: 1, backgroundColor: animatedColors.background }}>
-      {/* Header */}
       <RNAnimated.View
         style={{
           paddingTop: insets.top + M3Spacing.lg,
@@ -245,22 +176,10 @@ export default function PerformanceScreen() {
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View style={{ flex: 1 }}>
-            <StyledText
-              style={{
-                ...M3Typography.headline.large,
-                color: colors.onSurface,
-                fontWeight: '600',
-              }}
-            >
+            <StyledText style={[M3Typography.headline.large, { color: colors.onSurface, fontWeight: '600' }]}>
               Performance Analytics
             </StyledText>
-            <StyledText
-              style={{
-                ...M3Typography.body.medium,
-                color: colors.onSurfaceVariant,
-                marginTop: 4,
-              }}
-            >
+            <StyledText style={[M3Typography.body.medium, { color: colors.onSurfaceVariant, marginTop: 4 }]}>
               {currentPeriod?.periodLabel || 'No Data'}
             </StyledText>
           </View>
@@ -279,7 +198,6 @@ export default function PerformanceScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Site Selector */}
         <TouchableOpacity
           style={{
             marginTop: M3Spacing.md,
@@ -295,31 +213,13 @@ export default function PerformanceScreen() {
           activeOpacity={0.7}
         >
           <View style={{ flex: 1 }}>
-            <StyledText
-              style={{
-                ...M3Typography.label.small,
-                color: colors.onSurfaceVariant,
-                marginBottom: 4,
-              }}
-            >
+            <StyledText style={[M3Typography.label.small, { color: colors.onSurfaceVariant, marginBottom: 4 }]}>
               Selected Site
             </StyledText>
-            <StyledText
-              style={{
-                ...M3Typography.title.medium,
-                color: colors.onSurface,
-                fontWeight: '600',
-              }}
-            >
+            <StyledText style={[M3Typography.title.medium, { color: colors.onSurface, fontWeight: '600' }]}>
               {displayName}
             </StyledText>
-            <StyledText
-              style={{
-                ...M3Typography.body.small,
-                color: colors.onSurfaceVariant,
-                marginTop: 2,
-              }}
-            >
+            <StyledText style={[M3Typography.body.small, { color: colors.onSurfaceVariant, marginTop: 2 }]}>
               {displayCapacity}
             </StyledText>
           </View>
@@ -327,188 +227,62 @@ export default function PerformanceScreen() {
         </TouchableOpacity>
       </RNAnimated.View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: M3Spacing.lg }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Stats Cards */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: M3Spacing.lg }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', gap: M3Spacing.md, marginTop: M3Spacing.lg }}>
-          <Animated.View
-            entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(100)}
-            style={{
-              flex: 1,
-              backgroundColor: colors.primaryContainer,
-              padding: M3Spacing.lg,
-              borderRadius: M3Shape.extraLarge,
-              ...M3Elevation.level1,
-            }}
-          >
-            <View
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: M3Shape.medium,
-                backgroundColor: colors.primary,
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: M3Spacing.sm,
-              }}
-            >
+          <Animated.View entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(100)} style={{ flex: 1, backgroundColor: colors.primaryContainer, padding: M3Spacing.lg, borderRadius: M3Shape.extraLarge, ...M3Elevation.level1 }}>
+            <View style={{ width: 48, height: 48, borderRadius: M3Shape.medium, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: M3Spacing.sm }}>
               <MaterialCommunityIcons name="chart-line" size={24} color={colors.onPrimary} />
             </View>
-            <StyledText
-              style={{
-                ...M3Typography.headline.medium,
-                color: colors.onPrimaryContainer,
-                fontWeight: '700',
-              }}
-            >
+            <StyledText style={[M3Typography.headline.medium, { color: colors.onPrimaryContainer, fontWeight: '700' }]}>
               {stats.avgGeneration.toFixed(1)}
             </StyledText>
-            <StyledText
-              style={{
-                ...M3Typography.body.small,
-                color: colors.onPrimaryContainer,
-                opacity: 0.8,
-                marginTop: 4,
-              }}
-            >
+            <StyledText style={[M3Typography.body.small, { color: colors.onPrimaryContainer, opacity: 0.8, marginTop: 4 }]}>
               Avg kWh/day
             </StyledText>
           </Animated.View>
 
-          <Animated.View
-            entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(150)}
-            style={{
-              flex: 1,
-              backgroundColor: colors.secondaryContainer,
-              padding: M3Spacing.lg,
-              borderRadius: M3Shape.extraLarge,
-              ...M3Elevation.level1,
-            }}
-          >
-            <View
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: M3Shape.medium,
-                backgroundColor: colors.secondary,
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: M3Spacing.sm,
-              }}
-            >
+          <Animated.View entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(150)} style={{ flex: 1, backgroundColor: colors.secondaryContainer, padding: M3Spacing.lg, borderRadius: M3Shape.extraLarge, ...M3Elevation.level1 }}>
+            <View style={{ width: 48, height: 48, borderRadius: M3Shape.medium, backgroundColor: colors.secondary, justifyContent: 'center', alignItems: 'center', marginBottom: M3Spacing.sm }}>
               <MaterialCommunityIcons name="flash" size={24} color={colors.onSecondary} />
             </View>
-            <StyledText
-              style={{
-                ...M3Typography.headline.medium,
-                color: colors.onSecondaryContainer,
-                fontWeight: '700',
-              }}
-            >
+            <StyledText style={[M3Typography.headline.medium, { color: colors.onSecondaryContainer, fontWeight: '700' }]}>
               {stats.peakPower.toFixed(1)}
             </StyledText>
-            <StyledText
-              style={{
-                ...M3Typography.body.small,
-                color: colors.onSecondaryContainer,
-                opacity: 0.8,
-                marginTop: 4,
-              }}
-            >
+            <StyledText style={[M3Typography.body.small, { color: colors.onSecondaryContainer, opacity: 0.8, marginTop: 4 }]}>
               Peak kWh
             </StyledText>
           </Animated.View>
         </View>
 
-        <Animated.View
-          entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(200)}
-          style={{
-            backgroundColor: colors.tertiaryContainer,
-            padding: M3Spacing.lg,
-            borderRadius: M3Shape.extraLarge,
-            marginTop: M3Spacing.md,
-            ...M3Elevation.level1,
-          }}
-        >
+        <Animated.View entering={SlideInRight.duration(M3Motion.duration.emphasized).delay(200)} style={{ backgroundColor: colors.tertiaryContainer, padding: M3Spacing.lg, borderRadius: M3Shape.extraLarge, marginTop: M3Spacing.md, ...M3Elevation.level1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View>
-              <StyledText
-                style={{
-                  ...M3Typography.label.medium,
-                  color: colors.onTertiaryContainer,
-                  opacity: 0.8,
-                  marginBottom: 4,
-                }}
-              >
+              <StyledText style={[M3Typography.label.medium, { color: colors.onTertiaryContainer, opacity: 0.8, marginBottom: 4 }]}>
                 Total Energy Generated
               </StyledText>
-              <StyledText
-                style={{
-                  ...M3Typography.display.small,
-                  color: colors.onTertiaryContainer,
-                  fontWeight: '700',
-                }}
-              >
+              <StyledText style={[M3Typography.display.small, { color: colors.onTertiaryContainer, fontWeight: '700' }]}>
                 {stats.totalEnergy.toFixed(1)} kWh
               </StyledText>
             </View>
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: M3Shape.large,
-                backgroundColor: colors.tertiary,
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
+            <View style={{ width: 64, height: 64, borderRadius: M3Shape.large, backgroundColor: colors.tertiary, justifyContent: 'center', alignItems: 'center' }}>
               <MaterialCommunityIcons name="lightning-bolt" size={32} color={colors.onTertiary} />
             </View>
           </View>
         </Animated.View>
 
-        {/* Bar Chart Fixed View */}
-        <Animated.View
-          entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(250)}
-          style={{
-            backgroundColor: colors.surfaceContainerHigh,
-            padding: M3Spacing.lg,
-            borderRadius: M3Shape.extraLarge,
-            marginTop: M3Spacing.lg,
-            ...M3Elevation.level2,
-            overflow: 'hidden', 
-          }}
-        >
+        <Animated.View entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(250)} style={{ backgroundColor: colors.surfaceContainerHigh, padding: M3Spacing.lg, borderRadius: M3Shape.extraLarge, marginTop: M3Spacing.lg, ...M3Elevation.level2, overflow: 'hidden' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: M3Spacing.md }}>
-            <TouchableOpacity
-              onPress={goToPreviousPeriod}
-              disabled={currentPeriodIndex === 0}
-              style={{ opacity: currentPeriodIndex === 0 ? 0.3 : 1, padding: M3Spacing.sm }}
-            >
+            <TouchableOpacity onPress={goToPreviousPeriod} disabled={currentPeriodIndex === 0} style={{ opacity: currentPeriodIndex === 0 ? 0.3 : 1, padding: M3Spacing.sm }}>
               <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onSurface} />
             </TouchableOpacity>
-            <StyledText
-              style={{
-                ...M3Typography.title.large,
-                color: colors.onSurface,
-                fontWeight: '600',
-              }}
-            >
+            <StyledText style={[M3Typography.title.large, { color: colors.onSurface, fontWeight: '600' }]}>
               Daily Generation
             </StyledText>
-            <TouchableOpacity
-              onPress={goToNextPeriod}
-              disabled={currentPeriodIndex === weeklyGroups.length - 1}
-              style={{ opacity: currentPeriodIndex === weeklyGroups.length - 1 ? 0.3 : 1, padding: M3Spacing.sm }}
-            >
+            <TouchableOpacity onPress={goToNextPeriod} disabled={currentPeriodIndex === weeklyGroups.length - 1} style={{ opacity: currentPeriodIndex === weeklyGroups.length - 1 ? 0.3 : 1, padding: M3Spacing.sm }}>
               <MaterialCommunityIcons name="chevron-right" size={28} color={colors.onSurface} />
             </TouchableOpacity>
           </View>
-          
-          {/* Chart Wrapper - Removed fixed height so it scales naturally to fit the text below */}
+
           <View style={{ width: '100%', paddingTop: 10 }}>
             {barData.length > 0 ? (
               <View style={{ alignItems: 'center' }}>
@@ -528,18 +302,10 @@ export default function PerformanceScreen() {
                   stepValue={step}
                   maxValue={yAxisMax}
                   width={safeChartWidth}
-                  height={150} 
+                  height={150}
                   isAnimated
                 />
-                
-                {/* Time Period Label Below Chart */}
-                <StyledText 
-                  style={{ 
-                    color: colors.onSurfaceVariant, 
-                    ...M3Typography.label.medium,
-                    marginTop: 16 
-                  }}
-                >
+                <StyledText style={[M3Typography.label.medium, { color: colors.onSurfaceVariant, marginTop: 16 }]}>
                   {currentPeriod?.periodLabel || 'Unknown Period'}
                 </StyledText>
               </View>
@@ -551,26 +317,8 @@ export default function PerformanceScreen() {
           </View>
         </Animated.View>
 
-        {/* Pie Chart Fixed View */}
-        <Animated.View
-          entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(300)}
-          style={{
-            backgroundColor: colors.surfaceContainerHigh,
-            padding: M3Spacing.lg,
-            borderRadius: M3Shape.extraLarge,
-            marginTop: M3Spacing.lg,
-            ...M3Elevation.level2,
-            overflow: 'hidden', 
-          }}
-        >
-          <StyledText
-            style={{
-              ...M3Typography.title.large,
-              color: colors.onSurface,
-              fontWeight: '600',
-              marginBottom: M3Spacing.lg,
-            }}
-          >
+        <Animated.View entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(300)} style={{ backgroundColor: colors.surfaceContainerHigh, padding: M3Spacing.lg, borderRadius: M3Shape.extraLarge, marginTop: M3Spacing.lg, ...M3Elevation.level2, overflow: 'hidden' }}>
+          <StyledText style={[M3Typography.title.large, { color: colors.onSurface, fontWeight: '600', marginBottom: M3Spacing.lg }]}>
             Performance Distribution
           </StyledText>
           <View style={{ alignItems: 'center', marginVertical: M3Spacing.md, height: pieRadius * 2 + 20, justifyContent: 'center' }}>
@@ -583,45 +331,24 @@ export default function PerformanceScreen() {
                 innerCircleColor={colors.surfaceContainerHigh}
                 centerLabelComponent={() => (
                   <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-                    <StyledText
-                      style={{
-                        ...M3Typography.display.small,
-                        color: colors.onSurface,
-                        fontWeight: '700',
-                        textAlign: 'center',
-                      }}
-                    >
+                    <StyledText style={[M3Typography.display.small, { color: colors.onSurface, fontWeight: '700', textAlign: 'center' }]}>
                       {dailyData.length}
                     </StyledText>
-                    <StyledText
-                      style={{
-                        ...M3Typography.body.small,
-                        color: colors.onSurfaceVariant,
-                        textAlign: 'center',
-                      }}
-                    >
+                    <StyledText style={[M3Typography.body.small, { color: colors.onSurfaceVariant, textAlign: 'center' }]}>
                       Days
                     </StyledText>
                   </View>
                 )}
               />
             ) : (
-               <StyledText style={{ color: colors.onSurfaceVariant }}>No performance distribution data</StyledText>
+              <StyledText style={{ color: colors.onSurfaceVariant }}>No performance distribution data</StyledText>
             )}
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: M3Spacing.md, marginTop: M3Spacing.md, justifyContent: 'center' }}>
             {pieData.map((item, index) => (
               <View key={index} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <View
-                  style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: M3Shape.full,
-                    backgroundColor: item.color,
-                    marginRight: M3Spacing.xs,
-                  }}
-                />
-                <StyledText style={{ ...M3Typography.body.medium, color: colors.onSurface }}>
+                <View style={{ width: 16, height: 16, borderRadius: M3Shape.full, backgroundColor: item.color, marginRight: M3Spacing.xs }} />
+                <StyledText style={[M3Typography.body.medium, { color: colors.onSurface }]}>
                   {item.label}: {item.value}
                 </StyledText>
               </View>
@@ -629,67 +356,45 @@ export default function PerformanceScreen() {
           </View>
         </Animated.View>
 
-        {/* Export Button */}
-        <AnimatedTouchable
+        {/* Corrected Animated Button Wrapper to resolve Layout Animation warning */}
+        <Animated.View
           entering={FadeInUp.duration(M3Motion.duration.emphasized).delay(350)}
-          onPress={generatePDF}
-          disabled={generatingPDF}
-          style={{
-            backgroundColor: colors.primary,
-            paddingVertical: M3Spacing.lg,
-            paddingHorizontal: M3Spacing.xl,
-            borderRadius: M3Shape.extraLarge,
-            marginTop: M3Spacing.lg,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            ...M3Elevation.level3,
-            opacity: generatingPDF ? 0.6 : 1,
-          }}
-          activeOpacity={0.8}
+          style={{ marginTop: M3Spacing.lg }}
         >
-          {generatingPDF ? (
-            <ActivityIndicator color={colors.onPrimary} />
-          ) : (
-            <>
-              <MaterialCommunityIcons name="file-pdf-box" size={24} color={colors.onPrimary} />
-              <StyledText
-                style={{
-                  ...M3Typography.label.large,
-                  color: colors.onPrimary,
-                  marginLeft: M3Spacing.sm,
-                  fontWeight: '600',
-                }}
-              >
-                Export PDF Report
-              </StyledText>
-            </>
-          )}
-        </AnimatedTouchable>
+          <TouchableOpacity
+            onPress={handleGeneratePDF}
+            disabled={generatingPDF}
+            style={{
+              backgroundColor: colors.primary,
+              paddingVertical: M3Spacing.lg,
+              paddingHorizontal: M3Spacing.xl,
+              borderRadius: M3Shape.extraLarge,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...M3Elevation.level3,
+              opacity: generatingPDF ? 0.6 : 1,
+            }}
+            activeOpacity={0.8}
+          >
+            {generatingPDF ? (
+              <ActivityIndicator color={colors.onPrimary} />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="file-pdf-box" size={24} color={colors.onPrimary} />
+                <StyledText style={[M3Typography.label.large, { color: colors.onPrimary, marginLeft: M3Spacing.sm, fontWeight: '600' }]}>
+                  Export PDF Report
+                </StyledText>
+              </>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
 
         <View style={{ height: M3Spacing.xxxl + insets.bottom }} />
       </ScrollView>
 
-      {/* Site Selector Dialog */}
-      <M3SiteSelectorModal
-        visible={showSiteSelector}
-        sites={allSites}
-        selectedSiteId={selectedSiteId}
-        onSelectSite={(siteId) => {
-          setSelectedSiteId(siteId);
-        }}
-        onDismiss={() => setShowSiteSelector(false)}
-        showSearch={allSites.length > 10}
-      />
-
-      {/* M3 Alert Dialog */}
-      <M3AlertDialog
-        visible={alertConfig.visible}
-        title={alertConfig.title}
-        message={alertConfig.message}
-        type={alertConfig.type}
-        onDismiss={() => setAlertConfig({ ...alertConfig, visible: false })}
-      />
+      <M3SiteSelectorModal visible={showSiteSelector} sites={allSites} selectedSiteId={selectedSiteId} onSelectSite={(siteId) => { setSelectedSiteId(siteId); }} onDismiss={() => setShowSiteSelector(false)} showSearch={allSites.length > 10} />
+      <M3AlertDialog visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type={alertConfig.type} onDismiss={() => setAlertConfig({ ...alertConfig, visible: false })} />
     </RNAnimated.View>
   );
 }
