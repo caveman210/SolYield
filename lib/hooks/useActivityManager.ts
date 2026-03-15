@@ -1,11 +1,12 @@
 /**
  * useActivityManager Hook
- * 
+ *
  * Provides activity management operations (CRUD) using WatermelonDB.
  * Migrated from Redux to WatermelonDB as single source of truth.
  */
 
 import { useCallback, useMemo } from 'react';
+import { Q } from '@nozbe/watermelondb';
 import { Activity, ActivityType } from '../types';
 import { useDBActivities, useDBRecentActivities, useDBSiteActivities } from './useDBActivities';
 import { getActivitiesCollection, database } from '../../database';
@@ -77,21 +78,46 @@ export function useActivityActions() {
   const createActivity = useCallback(
     async (activityData: Omit<Activity, 'id' | 'timestamp' | 'synced'>) => {
       try {
-        await database.write(async () => {
+        const timestamp = Date.now();
+
+        // Pre-calculate previous visit count for O(1) read complexity
+        let previousVisitCount = 0;
+        let lastVisitTimestamp: number | null = null;
+
+        if (activityData.siteId) {
           const activitiesCollection = getActivitiesCollection();
-          await activitiesCollection.create((activity: any) => {
+          const previousVisits = await activitiesCollection
+            .query(Q.where('siteId', activityData.siteId), Q.where('timestamp', Q.lt(timestamp)))
+            .fetch();
+
+          previousVisitCount = previousVisits.length;
+          if (previousVisits.length > 0) {
+            lastVisitTimestamp = Math.max(...previousVisits.map((a) => a.timestamp));
+          }
+        }
+
+        const newActivity = await database.write(async () => {
+          const activitiesCollection = getActivitiesCollection();
+          const activity = await activitiesCollection.create((activity: any) => {
             activity.type = activityData.type;
             activity.title = activityData.title;
             activity.description = activityData.description || '';
             activity.siteId = activityData.siteId || '';
             activity.siteName = activityData.siteName || '';
-            activity.timestamp = Date.now();
+            activity.timestamp = timestamp;
             activity.icon = activityData.icon;
-            activity.metadata = JSON.stringify(activityData.metadata || {});
+            activity.metadata = JSON.stringify({
+              ...activityData.metadata,
+              previousVisitCount,
+              lastVisitTimestamp,
+            });
             activity.archived = false;
             activity.synced = false;
           });
+          return activity;
         });
+
+        return newActivity.id;
       } catch (error) {
         console.error('Error creating activity:', error);
         throw error;
@@ -100,49 +126,43 @@ export function useActivityActions() {
     []
   );
 
-  const syncActivity = useCallback(
-    async (activityId: string) => {
-      try {
-        const activitiesCollection = getActivitiesCollection();
-        const activity = await activitiesCollection.find(activityId);
-        
-        if (!activity) {
-          console.warn(`Activity ${activityId} not found`);
-          return;
-        }
+  const syncActivity = useCallback(async (activityId: string) => {
+    try {
+      const activitiesCollection = getActivitiesCollection();
+      const activity = await activitiesCollection.find(activityId);
 
-        await database.write(async () => {
-          await activity.markAsSynced();
-        });
-      } catch (error) {
-        console.error('Error syncing activity:', error);
-        throw error;
+      if (!activity) {
+        console.warn(`Activity ${activityId} not found`);
+        return;
       }
-    },
-    []
-  );
 
-  const deleteActivity = useCallback(
-    async (activityId: string) => {
-      try {
-        const activitiesCollection = getActivitiesCollection();
-        const activity = await activitiesCollection.find(activityId);
-        
-        if (!activity) {
-          console.warn(`Activity ${activityId} not found`);
-          return;
-        }
+      await database.write(async () => {
+        await activity.markAsSynced();
+      });
+    } catch (error) {
+      console.error('Error syncing activity:', error);
+      throw error;
+    }
+  }, []);
 
-        await database.write(async () => {
-          await activity.markAsDeleted(); // Soft delete
-        });
-      } catch (error) {
-        console.error('Error deleting activity:', error);
-        throw error;
+  const deleteActivity = useCallback(async (activityId: string) => {
+    try {
+      const activitiesCollection = getActivitiesCollection();
+      const activity = await activitiesCollection.find(activityId);
+
+      if (!activity) {
+        console.warn(`Activity ${activityId} not found`);
+        return;
       }
-    },
-    []
-  );
+
+      await database.write(async () => {
+        await activity.markAsDeleted(); // Soft delete
+      });
+    } catch (error) {
+      console.error('Error deleting activity:', error);
+      throw error;
+    }
+  }, []);
 
   const clearAll = useCallback(async () => {
     try {
@@ -151,9 +171,7 @@ export function useActivityActions() {
 
       await database.write(async () => {
         // Batch delete all activities
-        await Promise.all(
-          allActivities.map(activity => activity.markAsDeleted())
-        );
+        await Promise.all(allActivities.map((activity) => activity.markAsDeleted()));
       });
     } catch (error) {
       console.error('Error clearing activities:', error);
@@ -174,10 +192,7 @@ export function useActivityActions() {
  */
 export function useUnsyncedActivities() {
   const { activities } = useDBActivities();
-  const unsyncedActivities = useMemo(
-    () => getUnsyncedActivities(activities),
-    [activities]
-  );
+  const unsyncedActivities = useMemo(() => getUnsyncedActivities(activities), [activities]);
 
   return {
     unsyncedActivities,

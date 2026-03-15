@@ -55,27 +55,19 @@ export function useActivityContextMap(targetActivities: Activity[]): ActivityCon
     targetActivities.forEach((activity) => {
       const site = activity.siteId ? siteMap.get(activity.siteId) : undefined;
 
-      const previousVisits = activity.siteId
-        ? allActivities
-            .filter(
-              (record) =>
-                record.siteId === activity.siteId &&
-                record.timestamp < activity.timestamp &&
-                record.id !== activity.id
-            )
-            .sort((a, b) => b.timestamp - a.timestamp)
-        : [];
-
-      const lastVisitTimestamp = previousVisits.length > 0 ? previousVisits[0].timestamp : null;
+      // Read pre-calculated values from metadata (O(1) complexity)
+      const metadata = activity.metadata || {};
+      const previousVisitCount = metadata.previousVisitCount || 0;
+      const lastVisitTimestamp = metadata.lastVisitTimestamp || null;
 
       contextMap[activity.id] = {
         site,
-        previousVisitCount: previousVisits.length,
+        previousVisitCount,
         lastVisitTimestamp,
         description: buildFallbackDescription(activity, site),
       };
     });
 
     return contextMap;
-  }, [targetActivities, allActivities, siteMap]);
+  }, [targetActivities, siteMap]);
 }

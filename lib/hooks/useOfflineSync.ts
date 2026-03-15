@@ -7,9 +7,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
-import { useSelector } from 'react-redux';
-import { selectUnsyncedForms } from '../../store/slices/maintenanceSlice';
-import { selectUnsyncedActivities } from '../../store/slices/activitySlice';
+import { useUnsyncedActivities } from './useActivityManager';
+import { useUnsyncedForms } from './useMaintenanceForm';
 
 interface SyncStatus {
   isOnline: boolean;
@@ -73,9 +72,9 @@ export const useOfflineSync = () => {
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Get unsynced data from Redux
-  const unsyncedForms = useSelector(selectUnsyncedForms);
-  const unsyncedActivities = useSelector(selectUnsyncedActivities);
+  // Get unsynced data from WatermelonDB
+  const { unsyncedActivities } = useUnsyncedActivities();
+  const { unsyncedForms } = useUnsyncedForms();
 
   const unsyncedCount = unsyncedForms.length + unsyncedActivities.length;
 
@@ -171,12 +170,15 @@ export const useOfflineSync = () => {
       }, 2000);
 
       // Set up periodic sync every 10 minutes
-      const syncInterval = setInterval(() => {
-        if (isOnline && unsyncedCount > 0 && !isSyncing) {
-          console.log('Periodic auto-sync (10-minute interval)...');
-          syncDataSilently();
-        }
-      }, 10 * 60 * 1000); // 10 minutes in milliseconds
+      const syncInterval = setInterval(
+        () => {
+          if (isOnline && unsyncedCount > 0 && !isSyncing) {
+            console.log('Periodic auto-sync (10-minute interval)...');
+            syncDataSilently();
+          }
+        },
+        10 * 60 * 1000
+      ); // 10 minutes in milliseconds
 
       return () => {
         clearTimeout(initialTimer);

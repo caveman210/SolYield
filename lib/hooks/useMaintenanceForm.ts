@@ -1,6 +1,6 @@
 /**
  * useMaintenanceForm Hook
- * 
+ *
  * Business logic hook for managing maintenance forms with WatermelonDB.
  * Provides CRUD operations and offline-first data management.
  */
@@ -23,6 +23,8 @@ interface CreateFormData {
   issuesObserved?: string[];
   sitePhotoUri?: string;
   documents?: string[];
+  images?: Record<string, string>;
+  activityId?: string;
 }
 
 /**
@@ -38,9 +40,7 @@ export const useMaintenanceForms = () => {
       try {
         setIsLoading(true);
         const formsCollection = getMaintenanceFormsCollection();
-        const allForms = await formsCollection
-          .query(Q.sortBy('timestamp', Q.desc))
-          .fetch();
+        const allForms = await formsCollection.query(Q.sortBy('timestamp', Q.desc)).fetch();
         setForms(allForms);
       } catch (error) {
         console.error('Error loading maintenance forms:', error);
@@ -152,6 +152,10 @@ export const useMaintenanceFormActions = () => {
           if (data.documents) {
             form.documents = JSON.stringify(data.documents);
           }
+          if (data.images) {
+            form.images = JSON.stringify(data.images);
+          }
+          if (data.activityId) form.activityId = data.activityId;
         });
       });
 
@@ -165,10 +169,7 @@ export const useMaintenanceFormActions = () => {
    * Update an existing form
    */
   const updateForm = useCallback(
-    async (
-      form: MaintenanceForm,
-      updates: Partial<CreateFormData>
-    ): Promise<void> => {
+    async (form: MaintenanceForm, updates: Partial<CreateFormData>): Promise<void> => {
       await database.write(async () => {
         await form.updateFormData(updates);
       });

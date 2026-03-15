@@ -1,9 +1,8 @@
 import React, { useMemo } from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Activity } from '../../lib/types';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
-import { M3Typography, M3Shape, M3Spacing } from '../../lib/design/tokens';
 import { formatRelativeTime, getActivityColorRole } from '../../lib/utils/activityUtils';
 import StyledText from './StyledText';
 import { ActivityContextData } from '../../lib/hooks/useActivityContext';
@@ -46,48 +45,44 @@ export default function ActivityCard({ activity, context, onPress }: ActivityCar
     return duration || status;
   }, [activity.metadata, activity.type]);
 
-  const isArchivalEvent = !!(activity.metadata?.archivedSiteId || activity.metadata?.archivedVisitId);
+  const isArchivalEvent = !!(
+    activity.metadata?.archivedSiteId || activity.metadata?.archivedVisitId
+  );
 
   return (
     <TouchableOpacity
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.surfaceContainer,
-          borderLeftColor: activityColor,
-        },
-      ]}
+      className="flex-row items-start p-4 rounded-xl border-l-4 gap-3"
+      style={{
+        backgroundColor: colors.surfaceContainer,
+        borderLeftColor: activityColor,
+      }}
       activeOpacity={0.7}
       onPress={() => onPress?.(activity)}
     >
       <View
-        style={[
-          styles.iconContainer,
-          {
-            backgroundColor: `${activityColor}33`,
-          },
-        ]}
+        className="w-10 h-10 rounded-lg justify-center items-center"
+        style={{
+          backgroundColor: `${activityColor}33`,
+        }}
       >
         <MaterialCommunityIcons name={activity.icon as any} size={24} color={activityColor} />
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.titleRow}>
+      <View className="flex-1">
+        <View className="flex-row items-center">
           <StyledText
+            className="flex-1"
             style={{
-              ...M3Typography.body.large,
               color: colors.onSurface,
-              flex: 1,
             }}
             numberOfLines={2}
           >
             {activity.title}
           </StyledText>
           <StyledText
+            className="ml-2"
             style={{
-              ...M3Typography.label.small,
               color: colors.onSurfaceVariant,
-              marginLeft: M3Spacing.sm,
             }}
           >
             {formatRelativeTime(activity.timestamp)}
@@ -96,10 +91,9 @@ export default function ActivityCard({ activity, context, onPress }: ActivityCar
 
         {context?.description && (
           <StyledText
+            className="mt-0.5"
             style={{
-              ...M3Typography.body.small,
               color: colors.onSurfaceVariant,
-              marginTop: 2,
             }}
             numberOfLines={2}
           >
@@ -109,10 +103,9 @@ export default function ActivityCard({ activity, context, onPress }: ActivityCar
 
         {inspectionSummary && (
           <StyledText
+            className="mt-1"
             style={{
-              ...M3Typography.label.small,
               color: colors.tertiary,
-              marginTop: 4,
             }}
           >
             {inspectionSummary}
@@ -120,29 +113,32 @@ export default function ActivityCard({ activity, context, onPress }: ActivityCar
         )}
 
         {context?.site && (
-          <View style={styles.siteRow}>
+          <View className="flex-row items-center mt-2">
             <MaterialCommunityIcons name="map-marker" size={16} color={colors.onSurfaceVariant} />
             <StyledText
+              className="ml-1"
               style={{
-                ...M3Typography.label.small,
                 color: colors.onSurfaceVariant,
-                marginLeft: 4,
               }}
               numberOfLines={1}
             >
-              {context.site.name} • {context.site.location.lat.toFixed(2)}°, {context.site.location.lng.toFixed(2)}°
+              {context.site.name} • {context.site.location.lat.toFixed(2)}°,{' '}
+              {context.site.location.lng.toFixed(2)}°
             </StyledText>
           </View>
         )}
 
         {previousInspectionLabel && (
-          <View style={styles.footerRow}>
-            <MaterialCommunityIcons name="clipboard-text-clock" size={16} color={colors.onSurfaceVariant} />
+          <View className="flex-row items-center mt-2">
+            <MaterialCommunityIcons
+              name="clipboard-text-clock"
+              size={16}
+              color={colors.onSurfaceVariant}
+            />
             <StyledText
+              className="ml-1"
               style={{
-                ...M3Typography.label.small,
                 color: colors.onSurfaceVariant,
-                marginLeft: 4,
               }}
             >
               {previousInspectionLabel}
@@ -151,20 +147,11 @@ export default function ActivityCard({ activity, context, onPress }: ActivityCar
         )}
       </View>
 
-      <MaterialCommunityIcons 
-        name={isArchivalEvent ? "archive-arrow-up-outline" : "chevron-right"} 
-        size={24} 
-        color={isArchivalEvent ? colors.primary : colors.onSurfaceVariant} 
+      <MaterialCommunityIcons
+        name={isArchivalEvent ? 'archive-arrow-up-outline' : 'chevron-right'}
+        size={24}
+        color={isArchivalEvent ? colors.primary : colors.onSurfaceVariant}
       />
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flexDirection: 'row', alignItems: 'flex-start', padding: M3Spacing.lg, borderRadius: M3Shape.medium, borderLeftWidth: 4, gap: M3Spacing.md },
-  iconContainer: { width: 40, height: 40, borderRadius: M3Shape.small, justifyContent: 'center', alignItems: 'center' },
-  content: { flex: 1 },
-  titleRow: { flexDirection: 'row', alignItems: 'center' },
-  siteRow: { flexDirection: 'row', alignItems: 'center', marginTop: M3Spacing.sm },
-  footerRow: { flexDirection: 'row', alignItems: 'center', marginTop: M3Spacing.sm },
-});

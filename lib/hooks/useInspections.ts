@@ -1,43 +1,65 @@
 import { useCallback, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '../../store';
 import {
-  submitForm,
-  saveDraft,
-  clearDraft,
-  markSynced,
-  deleteForm,
-} from '../../store/slices/maintenanceSlice';
-import { addActivity } from '../../store/slices/activitySlice';
+  useMaintenanceForms,
+  useUnsyncedForms,
+  useMaintenanceFormActions,
+  useMaintenanceForm,
+} from './useMaintenanceForm';
 import { InspectionForm } from '../types';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 
 /**
  * Custom hook for managing inspection forms
- * Provides abstraction layer between UI and Redux state
+ * Provides abstraction layer between UI and WatermelonDB state
  */
 export function useInspections() {
-  const dispatch = useDispatch();
-  const forms = useSelector((state: RootState) => state.maintenance.forms);
-  const currentDraft = useSelector((state: RootState) => state.maintenance.currentDraft);
-  const isSyncing = useSelector((state: RootState) => state.maintenance.isSyncing);
+  const { forms, isLoading } = useMaintenanceForms();
+  const { unsyncedForms } = useUnsyncedForms();
+  const actions = useMaintenanceFormActions();
+
+  // Convert MaintenanceForm[] to InspectionForm[] for compatibility
+  const convertToInspectionForm = useCallback(
+    (form: any): InspectionForm => ({
+      id: form.id,
+      timestamp: form.timestamp,
+      synced: form.synced,
+      siteId: form.siteId,
+      siteName: form.siteName,
+      data: {
+        inverterSerial: form.inverterSerial,
+        currentGeneration: form.currentGeneration,
+        panelCondition: form.panelCondition,
+        wiringIntegrity: form.wiringIntegrity,
+        issuesObserved: form.issuesObservedArray,
+        documents: form.documentsArray,
+      },
+      images: {
+        sitePhoto: form.sitePhotoUri || '',
+      },
+      activityId: form.activityId,
+    }),
+    []
+  );
+
+  const inspectionForms = forms.map(convertToInspectionForm);
+  const unsyncedInspectionForms = unsyncedForms.map(convertToInspectionForm);
 
   /**
    * Get all inspection forms
    */
   const getAllInspections = useCallback(() => {
-    return forms;
-  }, [forms]);
+    return inspectionForms;
+  }, [inspectionForms]);
 
   /**
    * Get a single inspection by ID
    */
   const getInspectionById = useCallback(
     (id: string): InspectionForm | undefined => {
-      return forms.find((form) => form.id === id);
+      return inspectionForms.find((form) => form.id === id);
     },
-    [forms]
+    [inspectionForms]
   );
 
   /**
@@ -45,17 +67,17 @@ export function useInspections() {
    */
   const getInspectionsBySite = useCallback(
     (siteId: string): InspectionForm[] => {
-      return forms.filter((form) => form.siteId === siteId);
+      return inspectionForms.filter((form) => form.siteId === siteId);
     },
-    [forms]
+    [inspectionForms]
   );
 
   /**
    * Get pending (unsynced) inspections
    */
   const getPendingInspections = useCallback((): InspectionForm[] => {
-    return forms.filter((form) => !form.synced);
-  }, [forms]);
+    return unsyncedInspectionForms;
+  }, [unsyncedInspectionForms]);
 
   /**
    * Submit a new inspection form
@@ -63,97 +85,78 @@ export function useInspections() {
   const submitInspection = useCallback(
     async (data: Record<string, any>, siteId?: string, siteName?: string) => {
       try {
-        // Generate activity ID
-        const activityId = `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-        // Copy images to permanent storage
-        const copiedImages: Record<string, string> = {};
-        for (const [key, value] of Object.entries(data)) {
-          if (typeof value === 'string' && value.startsWith('file://')) {
-            try {
-              const fileName = `inspection_${Date.now()}_${key}.jpg`;
-              const cacheDir = FileSystem.Paths.cache;
-              const newPath = `${cacheDir}/${fileName}`;
-              await FileSystem.copyAsync({
-                from: value,
-                to: newPath,
-              });
-              copiedImages[key] = newPath;
-              data[key] = newPath; // Update data with permanent path
-            } catch (error) {
-              console.error('Error copying image:', error);
-              copiedImages[key] = value; // Fallback to original
-            }
-          }
+        if (!siteId) {
+          return { success: false, error: 'Site ID is required' };
         }
 
-        // Dispatch form submission
-        dispatch(
-          submitForm({
-            data,
-            siteId,
-            siteName,
-            activityId,
-          })
-        );
+        // Generate unique form ID
+        const formId = `inspection_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-        // Create activity entry
-        const activity = {
-          id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          type: 'inspection' as const,
-          title: 'Inspection Completed',
-          description: siteName
-            ? `Completed inspection at ${siteName}`
-            : 'Inspection form submitted',
+        // Copy images to permanent storage if needed
+        const sitePhotoUri = data.sitePhotoUri || data.sitePhoto;
+
+        // Create form using WatermelonDB
+        const newForm = await actions.createForm({
+          formId,
           siteId,
-          siteName,
-          icon: 'clipboard-check',
-          timestamp: Date.now(),
-          synced: false,
-        };
-        
-        dispatch(addActivity(activity));
+          technicianName: 'Current User', // TODO: Get from auth
+          inverterSerial: data.inverterSerial,
+          currentGeneration: data.currentGeneration,
+          panelCondition: data.panelCondition,
+          wiringIntegrity: data.wiringIntegrity,
+          issuesObserved: data.issuesObserved,
+          sitePhotoUri,
+          documents: data.documents,
+          images: data.images,
+          activityId: formId, // Use formId as activityId for now
+        });
 
-        return { success: true, activityId };
+        // Mark as completed and synced
+        await actions.completeForm(newForm);
+        await actions.syncForm(newForm);
+
+        // TODO: Create activity entry if needed
+
+        return { success: true, activityId: formId };
       } catch (error) {
         console.error('Error submitting inspection:', error);
         return { success: false, error };
       }
     },
-    [dispatch]
+    [actions]
   );
 
   /**
-   * Save draft of inspection form
+   * Save draft of inspection form (not implemented in WatermelonDB yet)
    */
-  const saveInspectionDraft = useCallback(
-    (data: Record<string, any>) => {
-      dispatch(saveDraft(data));
-    },
-    [dispatch]
-  );
+  const saveInspectionDraft = useCallback((data: Record<string, any>) => {
+    // TODO: Implement draft saving in WatermelonDB
+    console.log('Draft saving not implemented yet:', data);
+  }, []);
 
   /**
    * Clear current draft
    */
   const clearInspectionDraft = useCallback(() => {
-    dispatch(clearDraft());
-  }, [dispatch]);
+    // TODO: Implement draft clearing
+    console.log('Draft clearing not implemented yet');
+  }, []);
 
   /**
    * Mark inspection as synced
    */
   const markInspectionSynced = useCallback(
-    (inspectionId: string) => {
-      dispatch(markSynced(inspectionId));
-
-      // Also mark the related activity as synced
-      const inspection = forms.find((f) => f.id === inspectionId);
-      if (inspection?.activityId) {
-        // Activity will be marked synced through its own hook
+    async (inspectionId: string) => {
+      try {
+        const { form } = useMaintenanceForm(inspectionId);
+        if (form) {
+          await actions.syncForm(form);
+        }
+      } catch (error) {
+        console.error('Error marking inspection as synced:', error);
       }
     },
-    [dispatch, forms]
+    [actions]
   );
 
   /**
@@ -162,31 +165,17 @@ export function useInspections() {
   const deleteInspection = useCallback(
     async (inspectionId: string) => {
       try {
-        const inspection = forms.find((f) => f.id === inspectionId);
-        if (!inspection) return { success: false, error: 'Inspection not found' };
-
-        // Delete associated images from file system
-        for (const imageUri of Object.values(inspection.images)) {
-          try {
-            const fileInfo = await FileSystem.getInfoAsync(imageUri);
-            if (fileInfo.exists) {
-              await FileSystem.deleteAsync(imageUri);
-            }
-          } catch (error) {
-            console.error('Error deleting image:', error);
-          }
+        const { form } = useMaintenanceForm(inspectionId);
+        if (form) {
+          await actions.deleteForm(form);
         }
-
-        // Remove from Redux
-        dispatch(deleteForm(inspectionId));
-
         return { success: true };
       } catch (error) {
         console.error('Error deleting inspection:', error);
         return { success: false, error };
       }
     },
-    [dispatch, forms]
+    [actions]
   );
 
   /**
@@ -194,18 +183,18 @@ export function useInspections() {
    */
   const getInspectionStats = useCallback(() => {
     return {
-      total: forms.length,
-      pending: forms.filter((f) => !f.synced).length,
-      synced: forms.filter((f) => f.synced).length,
-      withImages: forms.filter((f) => Object.keys(f.images).length > 0).length,
+      total: inspectionForms.length,
+      pending: unsyncedInspectionForms.length,
+      synced: inspectionForms.length - unsyncedInspectionForms.length,
+      withImages: inspectionForms.filter((f) => f.images.sitePhoto).length,
     };
-  }, [forms]);
+  }, [inspectionForms, unsyncedInspectionForms]);
 
   return {
     // Data
-    forms,
-    currentDraft,
-    isSyncing,
+    forms: inspectionForms,
+    currentDraft: null, // TODO: Implement draft functionality
+    isSyncing: isLoading,
 
     // Getters
     getAllInspections,

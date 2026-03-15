@@ -15,6 +15,8 @@ export interface ScheduleVisit {
   date: string;
   time: string;
   title: string;
+  status?: string;
+  isRequiem?: boolean;
 }
 
 export interface DailyGeneration {

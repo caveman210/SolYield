@@ -1,6 +1,6 @@
 /**
  * MaintenanceForm Model
- * 
+ *
  * WatermelonDB model for offline maintenance form persistence.
  * Handles all form data including site info, inspections, and evidence.
  */
@@ -11,7 +11,7 @@ import { Associations } from '@nozbe/watermelondb/Model';
 
 export default class MaintenanceForm extends Model {
   static table = 'maintenance_forms';
-  
+
   static associations: Associations = {
     form_photos: { type: 'has_many', foreignKey: 'maintenance_form_id' },
     sites: { type: 'belongs_to', key: 'site_id' },
@@ -28,6 +28,7 @@ export default class MaintenanceForm extends Model {
   @field('archived') archived!: boolean;
   @field('synced') synced!: boolean;
   @field('synced_at') syncedAt?: number;
+  @field('activity_id') activityId?: string;
 
   // Site Information Section
   @field('inverter_serial') inverterSerial!: string;
@@ -41,6 +42,7 @@ export default class MaintenanceForm extends Model {
   // Evidence Section
   @field('site_photo_uri') sitePhotoUri?: string;
   @field('documents') documents?: string; // JSON string
+  @field('images') images?: string; // JSON string for additional images
 
   // Timestamps
   @readonly @date('created_at') createdAt!: Date;
@@ -74,15 +76,50 @@ export default class MaintenanceForm extends Model {
   }
 
   /**
-   * Check if form is complete and ready for sync
+   * Parse images from JSON string
    */
-  get isReadyForSync(): boolean {
-    return (
-      this.completed &&
-      !this.synced &&
-      !!this.inverterSerial &&
-      !!this.sitePhotoUri
-    );
+  get imagesArray(): Record<string, string> {
+    if (!this.images) return {};
+    try {
+      return JSON.parse(this.images);
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Update form data
+   */
+  async updateFormData(
+    data: Partial<{
+      inverterSerial: string;
+      currentGeneration: number;
+      panelCondition: string;
+      wiringIntegrity: string;
+      issuesObserved: string[];
+      sitePhotoUri: string;
+      documents: string[];
+      images: Record<string, string>;
+      activityId: string;
+    }>
+  ) {
+    await this.update((form) => {
+      if (data.inverterSerial !== undefined) form.inverterSerial = data.inverterSerial;
+      if (data.currentGeneration !== undefined) form.currentGeneration = data.currentGeneration;
+      if (data.panelCondition !== undefined) form.panelCondition = data.panelCondition;
+      if (data.wiringIntegrity !== undefined) form.wiringIntegrity = data.wiringIntegrity;
+      if (data.issuesObserved !== undefined) {
+        form.issuesObserved = JSON.stringify(data.issuesObserved);
+      }
+      if (data.sitePhotoUri !== undefined) form.sitePhotoUri = data.sitePhotoUri;
+      if (data.documents !== undefined) {
+        form.documents = JSON.stringify(data.documents);
+      }
+      if (data.images !== undefined) {
+        form.images = JSON.stringify(data.images);
+      }
+      if (data.activityId !== undefined) form.activityId = data.activityId;
+    });
   }
 
   /**
@@ -101,33 +138,6 @@ export default class MaintenanceForm extends Model {
   async markAsCompleted() {
     await this.update((form) => {
       form.completed = true;
-    });
-  }
-
-  /**
-   * Update form data
-   */
-  async updateFormData(data: Partial<{
-    inverterSerial: string;
-    currentGeneration: number;
-    panelCondition: string;
-    wiringIntegrity: string;
-    issuesObserved: string[];
-    sitePhotoUri: string;
-    documents: string[];
-  }>) {
-    await this.update((form) => {
-      if (data.inverterSerial !== undefined) form.inverterSerial = data.inverterSerial;
-      if (data.currentGeneration !== undefined) form.currentGeneration = data.currentGeneration;
-      if (data.panelCondition !== undefined) form.panelCondition = data.panelCondition;
-      if (data.wiringIntegrity !== undefined) form.wiringIntegrity = data.wiringIntegrity;
-      if (data.issuesObserved !== undefined) {
-        form.issuesObserved = JSON.stringify(data.issuesObserved);
-      }
-      if (data.sitePhotoUri !== undefined) form.sitePhotoUri = data.sitePhotoUri;
-      if (data.documents !== undefined) {
-        form.documents = JSON.stringify(data.documents);
-      }
     });
   }
 }

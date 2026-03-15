@@ -1,8 +1,5 @@
 import '../global.css';
 import { Stack } from 'expo-router';
-import { Provider } from 'react-redux';
-import { PersistGate } from 'redux-persist/integration/react';
-import { store, persistor } from '../store';
 import { useFonts } from 'expo-font';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { MaterialYouProvider, useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
@@ -134,9 +131,7 @@ function InitializationGate({ children }: { children: React.ReactNode }) {
             textAlign: 'center',
           }}
         >
-          {dbState.migrationStatus === 'running'
-            ? 'Setting up database...'
-            : 'Initializing app...'}
+          {dbState.migrationStatus === 'running' ? 'Setting up database...' : 'Initializing app...'}
         </Text>
         {dbState.migrationStatus === 'running' && (
           <Text
@@ -204,24 +199,13 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <Provider store={store}>
-        <PersistGate
-          loading={
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-              <ActivityIndicator size="large" />
-            </View>
-          }
-          persistor={persistor}
-        >
-          <MaterialYouProvider>
-            <DatabaseProvider database={database}>
-              <InitializationGate>
-                <AppContent />
-              </InitializationGate>
-            </DatabaseProvider>
-          </MaterialYouProvider>
-        </PersistGate>
-      </Provider>
+      <MaterialYouProvider>
+        <DatabaseProvider database={database}>
+          <InitializationGate>
+            <AppContent />
+          </InitializationGate>
+        </DatabaseProvider>
+      </MaterialYouProvider>
     </SafeAreaProvider>
   );
 }

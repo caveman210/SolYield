@@ -104,8 +104,8 @@ export default function MapNavigationScreen() {
       const subscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          timeInterval: 5000,
-          distanceInterval: 10,
+          timeInterval: 15000, // 15 seconds
+          distanceInterval: 50, // 50 meters
         },
         (newLocation) => {
           setUserLocation(newLocation);
@@ -172,7 +172,7 @@ export default function MapNavigationScreen() {
       Platform.OS === 'ios'
         ? `maps://app?daddr=${site.location.lat},${site.location.lng}`
         : `geo:0,0?q=${site.location.lat},${site.location.lng}(${label})`;
-    
+
     Linking.openURL(url).catch(() => {
       // Fallback to Google Maps web
       const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${site.location.lat},${site.location.lng}`;

@@ -1,3 +1,4 @@
+import React, { useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,48 +18,60 @@ export default function SitesScreen() {
   const insets = useSafeAreaInsets();
   const { allSites } = useSiteManagement();
 
-  const renderSite = ({ item, index }: { item: Site; index: number }) => (
-    <AnimatedTouchableOpacity
-      entering={FadeInUp.duration(M3Motion.duration.medium).delay(index * 50)}
-      style={[styles.siteCard, { backgroundColor: colors.surfaceContainer, shadowColor: colors.shadow }]}
-      onPress={() => router.push(`/site/${item.id}`)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.siteHeader}>
-        <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
-          <Ionicons name="sunny" size={28} color={colors.primary} />
+  const renderSite = useCallback(
+    ({ item, index }: { item: Site; index: number }) => (
+      <AnimatedTouchableOpacity
+        entering={FadeInUp.duration(M3Motion.duration.medium).delay(index * 50)}
+        style={[
+          styles.siteCard,
+          { backgroundColor: colors.surfaceContainer, shadowColor: colors.shadow },
+        ]}
+        onPress={() => router.push(`/site/${item.id}`)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.siteHeader}>
+          <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
+            <Ionicons name="sunny" size={28} color={colors.primary} />
+          </View>
+          <View style={styles.siteInfo}>
+            <Text style={[styles.siteName, { color: colors.onSurface }]}>{item.name}</Text>
+            <Text style={[styles.siteCapacity, { color: colors.primary }]}>{item.capacity}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color={colors.outline} />
         </View>
-        <View style={styles.siteInfo}>
-          <Text style={[styles.siteName, { color: colors.onSurface }]}>{item.name}</Text>
-          <Text style={[styles.siteCapacity, { color: colors.primary }]}>{item.capacity}</Text>
+        <View style={[styles.locationContainer, { backgroundColor: colors.surfaceContainerLow }]}>
+          <Ionicons name="location" size={16} color={colors.outline} style={styles.locationIcon} />
+          <Text style={[styles.locationText, { color: colors.onSurfaceVariant }]}>
+            {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}
+          </Text>
         </View>
-        <Ionicons name="chevron-forward" size={24} color={colors.outline} />
-      </View>
-      <View style={[styles.locationContainer, { backgroundColor: colors.surfaceContainerLow }]}>
-        <Ionicons name="location" size={16} color={colors.outline} style={styles.locationIcon} />
-        <Text style={[styles.locationText, { color: colors.onSurfaceVariant }]}>
-          {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}
-        </Text>
-      </View>
-      <View style={styles.mapPreview}>
-        <SiteMapWidget
-          location={item.location}
-          siteName={item.name}
-          subtitle={`${item.location.lat.toFixed(2)}°, ${item.location.lng.toFixed(2)}°`}
-          height={120}
-          showCoordinates={false}
-        />
-      </View>
-    </AnimatedTouchableOpacity>
+        <View style={styles.mapPreview}>
+          <SiteMapWidget
+            location={item.location}
+            siteName={item.name}
+            subtitle={`${item.location.lat.toFixed(2)}°, ${item.location.lng.toFixed(2)}°`}
+            height={120}
+            showCoordinates={false}
+          />
+        </View>
+      </AnimatedTouchableOpacity>
+    ),
+    [router, colors]
   );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + M3Spacing.lg }]}>
-        <Animated.Text entering={FadeInUp.duration(M3Motion.duration.medium)} style={[styles.headerTitle, { color: colors.onSurface }]}>
+        <Animated.Text
+          entering={FadeInUp.duration(M3Motion.duration.medium)}
+          style={[styles.headerTitle, { color: colors.onSurface }]}
+        >
           Solar Sites
         </Animated.Text>
-        <Animated.Text entering={FadeInUp.duration(M3Motion.duration.medium).delay(50)} style={[styles.headerSubtitle, { color: colors.onSurfaceVariant }]}>
+        <Animated.Text
+          entering={FadeInUp.duration(M3Motion.duration.medium).delay(50)}
+          style={[styles.headerSubtitle, { color: colors.onSurfaceVariant }]}
+        >
           {allSites.length} active solar parks
         </Animated.Text>
       </View>
@@ -66,20 +79,36 @@ export default function SitesScreen() {
         data={allSites}
         renderItem={renderSite}
         keyExtractor={(item) => item.id}
-        
         // --- Aggressive FlatList Optimizations to prevent SVG Lag ---
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
         windowSize={5}
         removeClippedSubviews={true}
         // -------------------------------------------------------------
-        
-        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + M3Spacing.xl + 80 }]}
+
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: insets.bottom + M3Spacing.xl + 80 },
+        ]}
         showsVerticalScrollIndicator={false}
       />
-      
-      <Animated.View entering={FadeInUp.duration(M3Motion.duration.medium).delay(200)} style={[styles.fab, { backgroundColor: colors.primaryContainer, shadowColor: colors.shadow, bottom: insets.bottom + 80 }]}>
-        <TouchableOpacity style={styles.fabTouchable} onPress={() => router.push('/add-site')} activeOpacity={0.8}>
+
+      <Animated.View
+        entering={FadeInUp.duration(M3Motion.duration.medium).delay(200)}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: colors.primaryContainer,
+            shadowColor: colors.shadow,
+            bottom: insets.bottom + 80,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.fabTouchable}
+          onPress={() => router.push('/add-site')}
+          activeOpacity={0.8}
+        >
           <MaterialCommunityIcons name="plus" size={28} color={colors.onPrimaryContainer} />
         </TouchableOpacity>
       </Animated.View>
@@ -93,16 +122,47 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 28, fontWeight: '400', marginBottom: 8 },
   headerSubtitle: { fontSize: 16 },
   listContent: { padding: 20, paddingTop: 8 },
-  siteCard: { padding: 20, marginBottom: 16, borderRadius: 16, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 2 },
+  siteCard: {
+    padding: 20,
+    marginBottom: 16,
+    borderRadius: 16,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 2,
+  },
   siteHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  iconContainer: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
+  iconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
   siteInfo: { flex: 1 },
   siteName: { fontSize: 22, fontWeight: '400', marginBottom: 4 },
   siteCapacity: { fontSize: 14, fontWeight: '500' },
-  locationContainer: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center' },
+  locationContainer: {
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   locationIcon: { marginRight: 8 },
   locationText: { fontSize: 14 },
   mapPreview: { marginTop: 12 },
-  fab: { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 16, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
   fabTouchable: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
 });

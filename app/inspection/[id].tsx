@@ -1,17 +1,7 @@
-import {
-  View,
-  Text,
-  ScrollView,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-  Share,
-} from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '../../store';
-import { markSynced, deleteForm } from '../../store/slices/maintenanceSlice';
+import { useInspections } from '../../lib/hooks/useInspections';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
 import Animated, { FadeInUp, FadeIn } from 'react-native-reanimated';
@@ -24,10 +14,8 @@ const AnimatedView = Animated.createAnimatedComponent(View);
 export default function InspectionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useMaterialYouColors();
-  const dispatch = useDispatch();
-  const form = useSelector((state: RootState) =>
-    state.maintenance.forms.find((f) => f.id === id)
-  );
+  const { getInspectionById, markInspectionSynced, deleteInspection } = useInspections();
+  const form = getInspectionById(id);
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
   const [dialogConfig, setDialogConfig] = useState<{
     visible: boolean;
@@ -55,14 +43,8 @@ export default function InspectionDetailScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.errorContainer}>
-          <MaterialCommunityIcons
-            name="alert-circle-outline"
-            size={64}
-            color={colors.error}
-          />
-          <Text style={[styles.errorText, { color: colors.onSurface }]}>
-            Inspection not found
-          </Text>
+          <MaterialCommunityIcons name="alert-circle-outline" size={64} color={colors.error} />
+          <Text style={[styles.errorText, { color: colors.onSurface }]}>Inspection not found</Text>
         </View>
       </SafeAreaView>
     );
@@ -86,7 +68,7 @@ export default function InspectionDetailScreen() {
       message: 'Mark this inspection as synced to the server?',
       type: 'info',
       onConfirm: () => {
-        dispatch(markSynced(form.id));
+        markInspectionSynced(form.id);
         setDialogConfig({
           visible: true,
           title: 'Success',
@@ -104,7 +86,7 @@ export default function InspectionDetailScreen() {
       message: 'Are you sure you want to delete this inspection? This action cannot be undone.',
       type: 'error',
       onConfirm: () => {
-        dispatch(deleteForm(form.id));
+        deleteInspection(form.id);
         router.back();
       },
     });
@@ -114,9 +96,7 @@ export default function InspectionDetailScreen() {
     try {
       const formData = Object.entries(form.data)
         .map(([key, value]) => {
-          const field = FORM_SCHEMA.sections
-            .flatMap((s) => s.fields)
-            .find((f) => f.id === key);
+          const field = FORM_SCHEMA.sections.flatMap((s) => s.fields).find((f) => f.id === key);
           const label = field?.label || key;
           return `${label}: ${Array.isArray(value) ? value.join(', ') : value}`;
         })
@@ -133,9 +113,7 @@ export default function InspectionDetailScreen() {
   };
 
   const getFieldLabel = (fieldId: string): string => {
-    const field = FORM_SCHEMA.sections
-      .flatMap((s) => s.fields)
-      .find((f) => f.id === fieldId);
+    const field = FORM_SCHEMA.sections.flatMap((s) => s.fields).find((f) => f.id === fieldId);
     return field?.label || fieldId;
   };
 
@@ -148,10 +126,7 @@ export default function InspectionDetailScreen() {
       return (
         <View style={styles.chipContainer}>
           {value.map((item, index) => (
-            <View
-              key={index}
-              style={[styles.chip, { backgroundColor: `${colors.primary}14` }]}
-            >
+            <View key={index} style={[styles.chip, { backgroundColor: `${colors.primary}14` }]}>
               <Text style={[styles.chipText, { color: colors.primary }]}>{item}</Text>
             </View>
           ))}
@@ -178,14 +153,8 @@ export default function InspectionDetailScreen() {
         >
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onSurface} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.onSurface }]}>
-          Inspection Details
-        </Text>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={handleShare}
-          activeOpacity={0.7}
-        >
+        <Text style={[styles.headerTitle, { color: colors.onSurface }]}>Inspection Details</Text>
+        <TouchableOpacity style={styles.headerButton} onPress={handleShare} activeOpacity={0.7}>
           <MaterialCommunityIcons name="share-variant" size={24} color={colors.primary} />
         </TouchableOpacity>
       </View>
@@ -217,9 +186,7 @@ export default function InspectionDetailScreen() {
               style={[
                 styles.statusBadge,
                 {
-                  backgroundColor: form.synced
-                    ? `${colors.primary}14`
-                    : `${colors.error}14`,
+                  backgroundColor: form.synced ? `${colors.primary}14` : `${colors.error}14`,
                 },
               ]}
             >
@@ -230,10 +197,7 @@ export default function InspectionDetailScreen() {
                 style={styles.badgeIcon}
               />
               <Text
-                style={[
-                  styles.badgeText,
-                  { color: form.synced ? colors.primary : colors.error },
-                ]}
+                style={[styles.badgeText, { color: form.synced ? colors.primary : colors.error }]}
               >
                 {form.synced ? 'Synced' : 'Pending Sync'}
               </Text>
@@ -309,10 +273,7 @@ export default function InspectionDetailScreen() {
         })}
 
         {/* Action Buttons */}
-        <AnimatedView
-          entering={FadeIn.duration(600).delay(400)}
-          style={styles.actionContainer}
-        >
+        <AnimatedView entering={FadeIn.duration(600).delay(400)} style={styles.actionContainer}>
           {!form.synced && (
             <TouchableOpacity
               style={[styles.actionButton, { backgroundColor: colors.primary }]}

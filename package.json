@@ -54,7 +54,6 @@
     "expo-linear-gradient": "^15.0.8",
     "expo-linking": "~8.0.11",
     "expo-location": "~19.0.8",
-    "expo-maps": "^0.12.10",
     "expo-navigation-bar": "~5.0.10",
     "expo-print": "~15.0.8",
     "expo-router": "~6.0.23",
@@ -88,5 +87,7 @@
     "babel-plugin-inline-import": "^3.0.0",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "resolutions": {
+    "expo-keep-awake": "0.0.0"
+  }
 }

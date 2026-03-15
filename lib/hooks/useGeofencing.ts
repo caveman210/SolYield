@@ -1,123 +1,90 @@
-import React, { useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
-import { useGeofencing, formatDistance } from '../hooks/useGeofencing';
+import { useState, useCallback } from 'react';
+import * as Location from 'expo-location';
 import { Site } from '../types';
 
-interface SiteMapProps {
-  targetSite: Site;
-  onCheckInSuccess?: (activityId: string) => void;
+export const GEOFENCE_RADIUS_METERS = 50; // 50 meters radius
+
+interface GeofencingResult {
+  success: boolean;
+  activityId?: string;
+  error?: string;
 }
 
-export const SiteMap: React.FC<SiteMapProps> = ({ targetSite, onCheckInSuccess }) => {
-  const mapRef = useRef<MapView>(null);
-  const { 
-    currentLocation, 
-    getCurrentLocation, 
-    checkInAtSite, 
-    getDistanceToSite,
-    GEOFENCE_RADIUS_METERS // Export this from your hook
-  } = useGeofencing();
+export const useGeofencing = () => {
+  const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
 
-  const distance = getDistanceToSite(targetSite);
-  const isInside = distance !== null && distance <= GEOFENCE_RADIUS_METERS;
+  const getCurrentLocation = useCallback(async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.error('Location permission denied');
+        return;
+      }
 
-  useEffect(() => {
-    getCurrentLocation();
+      const location = await Location.getCurrentPositionAsync({});
+      setCurrentLocation(location);
+      return location;
+    } catch (error) {
+      console.error('Error getting location:', error);
+    }
   }, []);
 
-  const handleCheckIn = async () => {
-    const result = await checkInAtSite(targetSite);
-    if (result.success && result.activityId) {
-      onCheckInSuccess?.(result.activityId);
-    }
-  };
+  const getDistanceToSite = useCallback(
+    (site: Site) => {
+      if (!currentLocation) return null;
 
-  return (
-    <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_GOOGLE}
-        style={styles.map}
-        mapType="hybrid" // <--- ADD THIS LINE
-        showsUserLocation={true}
-        followsUserLocation={true}
-        initialRegion={{
-          latitude: targetSite.location.lat,
-          longitude: targetSite.location.lng,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-      >
-        {/* The Geofence Visualization */}
-        <Circle
-          center={{
-            latitude: targetSite.location.lat,
-            longitude: targetSite.location.lng,
-          }}
-          radius={GEOFENCE_RADIUS_METERS}
-          strokeColor={isInside ? 'rgba(76, 175, 80, 0.5)' : 'rgba(33, 150, 243, 0.5)'}
-          fillColor={isInside ? 'rgba(76, 175, 80, 0.2)' : 'rgba(33, 150, 243, 0.1)'}
-        />
+      const lat1 = currentLocation.coords.latitude;
+      const lon1 = currentLocation.coords.longitude;
+      const lat2 = site.location.lat;
+      const lon2 = site.location.lng;
 
-        {/* Site Marker */}
-        <Marker
-          coordinate={{
-            latitude: targetSite.location.lat,
-            longitude: targetSite.location.lng,
-          }}
-          title={targetSite.name}
-          description={`Radius: ${GEOFENCE_RADIUS_METERS}m`}
-        />
-      </MapView>
+      const R = 6371e3; // Earth's radius in meters
+      const φ1 = (lat1 * Math.PI) / 180;
+      const φ2 = (lat2 * Math.PI) / 180;
+      const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+      const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-      {/* Overlay UI */}
-      <View style={styles.overlay}>
-        <View style={styles.infoCard}>
-          <Text style={styles.distanceText}>
-            {distance ? `Distance: ${formatDistance(distance)}` : 'Locating...'}
-          </Text>
-          <TouchableOpacity
-            style={[styles.button, !isInside && styles.buttonDisabled]}
-            disabled={!isInside}
-            onPress={handleCheckIn}
-          >
-            <Text style={styles.buttonText}>
-              {isInside ? 'Check In Now' : 'Too Far to Check In'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
+      const a =
+        Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+    },
+    [currentLocation]
   );
+
+  const checkInAtSite = useCallback(
+    async (site: Site): Promise<GeofencingResult> => {
+      const distance = getDistanceToSite(site);
+      if (distance === null) {
+        return { success: false, error: 'Unable to determine location' };
+      }
+
+      if (distance > GEOFENCE_RADIUS_METERS) {
+        return { success: false, error: `Too far from site (${Math.round(distance)}m away)` };
+      }
+
+      // Here you would typically create an activity record
+      // For now, return a mock activity ID
+      const activityId = `activity_${Date.now()}`;
+      return { success: true, activityId };
+    },
+    [getDistanceToSite]
+  );
+
+  return {
+    currentLocation,
+    getCurrentLocation,
+    getDistanceToSite,
+    checkInAtSite,
+    GEOFENCE_RADIUS_METERS,
+  };
 };
 
-const styles = StyleSheet.create({
-  container: { ...StyleSheet.absoluteFillObject },
-  map: { ...StyleSheet.absoluteFillObject },
-  overlay: {
-    position: 'absolute',
-    bottom: 40,
-    left: 20,
-    right: 20,
-  },
-  infoCard: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 15,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    alignItems: 'center',
-  },
-  distanceText: { fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
-  button: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 25,
-  },
-  buttonDisabled: { backgroundColor: '#bdbdbd' },
-  buttonText: { color: 'white', fontWeight: '600' },
-});
+export const formatDistance = (meters: number): string => {
+  if (meters < 1000) {
+    return `${Math.round(meters)}m`;
+  }
+  return `${(meters / 1000).toFixed(1)}km`;
+};
