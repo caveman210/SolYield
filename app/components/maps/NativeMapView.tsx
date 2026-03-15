@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -11,7 +11,7 @@ export type GeoPoint = {
   lng: number;
 };
 
-interface NativeMapViewProps {
+export interface NativeMapViewProps {
   location?: GeoPoint;
   siteName?: string;
   subtitle?: string;
@@ -19,17 +19,11 @@ interface NativeMapViewProps {
   showCoordinates?: boolean;
   radiusMeters?: number;
   onPress?: () => void;
+  interactive?: boolean;        // NEW: Enables zoom/pan gestures
+  showsUserLocation?: boolean;  // NEW: Shows the blue GPS dot
 }
 
-/**
- * NativeMapView
- * 
- * Wrapper for react-native-maps that will be used when ENABLE_NATIVE_MAPS is true.
- * This component requires Google Maps API key to be configured in app.json.
- * 
- * Currently unused - the app defaults to MiniMapPreview to avoid API key requirement.
- */
-export default function NativeMapView({
+const NativeMapView = forwardRef<MapView, NativeMapViewProps>(({
   location,
   siteName,
   subtitle,
@@ -37,7 +31,9 @@ export default function NativeMapView({
   showCoordinates = true,
   radiusMeters,
   onPress,
-}: NativeMapViewProps) {
+  interactive = false,
+  showsUserLocation = false,
+}, ref) => {
   const colors = useMaterialYouColors();
 
   if (!location) {
@@ -52,35 +48,32 @@ export default function NativeMapView({
   }
 
   return (
-    <View style={[styles.container, { height }]}>
+    <View style={[styles.container, { height, borderWidth: interactive ? 0 : 1 }]}>
       <MapView
+        ref={ref}
         style={styles.map}
         initialRegion={{
           latitude: location.lat,
           longitude: location.lng,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
+          latitudeDelta: interactive ? 0.04 : 0.01,
+          longitudeDelta: interactive ? 0.04 : 0.01,
         }}
-        scrollEnabled={false}
-        zoomEnabled={false}
-        rotateEnabled={false}
-        pitchEnabled={false}
+        scrollEnabled={interactive}
+        zoomEnabled={interactive}
+        rotateEnabled={interactive}
+        pitchEnabled={interactive}
+        showsUserLocation={showsUserLocation}
+        showsMyLocationButton={false} // We are using our custom Recenter button
       >
         <Marker
-          coordinate={{
-            latitude: location.lat,
-            longitude: location.lng,
-          }}
+          coordinate={{ latitude: location.lat, longitude: location.lng }}
           title={siteName}
           description={subtitle}
           pinColor={colors.primary}
         />
         {radiusMeters && (
           <Circle
-            center={{
-              latitude: location.lat,
-              longitude: location.lng,
-            }}
+            center={{ latitude: location.lat, longitude: location.lng }}
             radius={radiusMeters}
             fillColor={`${colors.primary}22`}
             strokeColor={`${colors.primary}88`}
@@ -89,47 +82,27 @@ export default function NativeMapView({
         )}
       </MapView>
 
-      {(siteName || subtitle || showCoordinates) && (
+      {/* Only show the overlay box if it's NOT an interactive full-screen map */}
+      {!interactive && (siteName || subtitle || showCoordinates) && (
         <View
           style={[
             styles.infoOverlay,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.outlineVariant,
-            },
+            { backgroundColor: colors.surface, borderColor: colors.outlineVariant },
           ]}
+          pointerEvents="none"
         >
           {siteName && (
-            <StyledText
-              style={{
-                fontWeight: '600',
-                color: colors.onSurface,
-              }}
-              numberOfLines={1}
-            >
+            <StyledText style={{ fontWeight: '600', color: colors.onSurface }} numberOfLines={1}>
               {siteName}
             </StyledText>
           )}
           {subtitle && (
-            <StyledText
-              style={{
-                fontSize: 12,
-                color: colors.onSurfaceVariant,
-                marginTop: 2,
-              }}
-              numberOfLines={1}
-            >
+            <StyledText style={{ fontSize: 12, color: colors.onSurfaceVariant, marginTop: 2 }} numberOfLines={1}>
               {subtitle}
             </StyledText>
           )}
           {showCoordinates && (
-            <StyledText
-              style={{
-                fontSize: 11,
-                color: colors.onSurfaceVariant,
-                marginTop: 4,
-              }}
-            >
+            <StyledText style={{ fontSize: 11, color: colors.onSurfaceVariant, marginTop: 4 }}>
               {location.lat.toFixed(3)}°, {location.lng.toFixed(3)}°
             </StyledText>
           )}
@@ -137,32 +110,13 @@ export default function NativeMapView({
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    borderRadius: M3Shape.large,
-    overflow: 'hidden',
-    borderWidth: 1,
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  placeholder: {
-    width: '100%',
-    borderRadius: M3Shape.large,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  infoOverlay: {
-    position: 'absolute',
-    bottom: 12,
-    left: 12,
-    right: 12,
-    borderRadius: M3Shape.medium,
-    padding: 12,
-    borderWidth: 1,
-  },
+  container: { width: '100%', borderRadius: M3Shape.large, overflow: 'hidden', borderColor: '#00000020' },
+  map: { ...StyleSheet.absoluteFillObject },
+  placeholder: { width: '100%', borderRadius: M3Shape.large, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
+  infoOverlay: { position: 'absolute', bottom: 12, left: 12, right: 12, borderRadius: M3Shape.medium, padding: 12, borderWidth: 1 },
 });
+
+export default NativeMapView;

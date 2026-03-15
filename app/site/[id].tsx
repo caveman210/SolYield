@@ -32,8 +32,6 @@ import { useSites } from '../../lib/hooks/useSites';
 import { getSchedulesCollection, getActivitiesCollection, database } from '../../database';
 import Schedule from '../../database/models/Schedule';
 import { useActivityActions } from '../../lib/hooks/useActivityManager';
-
-// Import Schedule Management to fetch visits specific to this site
 import { useScheduleManagement } from '../../lib/hooks/useScheduleManagement';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -61,7 +59,6 @@ export default function SiteDetailScreen() {
       }
     : null;
 
-  // Retrieve upcoming unarchived visits for this site
   const siteVisits = site ? getVisitsBySite(site.id) : [];
 
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
@@ -157,12 +154,10 @@ export default function SiteDetailScreen() {
 
       let location = null;
       try {
-        // Single-shot, battery-efficient request
         location = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
       } catch (error) {
-        // Fallback immediately without spinning up GPS again
         location = await Location.getLastKnownPositionAsync({ maxAge: 300000 });
       }
 
@@ -345,7 +340,6 @@ export default function SiteDetailScreen() {
     try {
       await siteModel.archive();
 
-      // Inject metadata so the Activity feed knows WHAT site to unarchive
       await database.write(async () => {
         const activitiesCollection = getActivitiesCollection();
         await activitiesCollection.create((activity: any) => {
@@ -378,6 +372,7 @@ export default function SiteDetailScreen() {
       });
     }
   };
+
   const handleExternalNavigation = () => {
     if (!site) return;
     const label = encodeURIComponent(site.name);
@@ -471,6 +466,8 @@ export default function SiteDetailScreen() {
           </View>
         ) : (
           <SiteMapWidget
+            forceNative={true}      // <-- Forces Native Map Rendering
+            interactive={false}     // <-- Disables gestures so the BottomSheet can be scrolled smoothly
             location={site.location}
             siteName={site.name}
             subtitle={site.capacity}
@@ -721,7 +718,7 @@ export default function SiteDetailScreen() {
         </Animated.View>
       </M3BottomSheet>
 
-      {/* Delete Warning Dialog */}
+      {/* Dialogs */}
       <M3ConfirmDialog
         visible={showDeleteDialog}
         title="Delete Site?"
@@ -891,8 +888,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-
-  // New Styles for Scheduled Visits section
   visitsSection: { marginTop: M3Spacing.xxl, marginBottom: M3Spacing.xl },
   visitsSectionTitle: { fontSize: 20, fontWeight: '600', marginBottom: M3Spacing.md },
   visitItemCard: {

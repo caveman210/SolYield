@@ -15,9 +15,10 @@ import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import MapView, { Marker } from 'react-native-maps'; // <-- ADDED NATIVE MAPS IMPORT
+import MapView from 'react-native-maps'; // <-- Needed for type reference
 
 import { SITES } from '../lib/data/sites';
+import SiteMapWidget from './components/maps/SiteMapWidget';
 import { calculateDistance, formatDistance } from '../lib/utils/location';
 import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
 import M3ErrorDialog from './components/M3ErrorDialog';
@@ -29,7 +30,7 @@ export default function MapNavigationScreen() {
   const router = useRouter();
   const colors = useMaterialYouColors();
 
-  // 1. Create a reference to the native map component
+  // 1. Create the Map Reference
   const mapRef = useRef<MapView>(null);
 
   const siteId = params.siteId as string;
@@ -95,12 +96,11 @@ export default function MapNavigationScreen() {
 
       setLoading(false);
 
-      // Watch location for real-time updates
       const subscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          timeInterval: 15000, // 15 seconds
-          distanceInterval: 50, // 50 meters
+          timeInterval: 15000, 
+          distanceInterval: 50, 
         },
         (newLocation) => {
           setUserLocation(newLocation);
@@ -136,18 +136,16 @@ export default function MapNavigationScreen() {
     const timeHours = distanceKm / speedKmh;
     const timeMinutes = Math.round(timeHours * 60);
 
-    if (timeMinutes < 1) {
-      setEstimatedTime('< 1 min');
-    } else if (timeMinutes < 60) {
-      setEstimatedTime(`${timeMinutes} min`);
-    } else {
+    if (timeMinutes < 1) setEstimatedTime('< 1 min');
+    else if (timeMinutes < 60) setEstimatedTime(`${timeMinutes} min`);
+    else {
       const hours = Math.floor(timeMinutes / 60);
       const mins = timeMinutes % 60;
       setEstimatedTime(`${hours}h ${mins}m`);
     }
   };
 
-  // 2. Actually command the map camera to fly to the user's location
+  // 2. Command the native camera to fly to the user
   const handleRecenterMap = () => {
     if (!userLocation) {
       setDialogConfig({
@@ -165,11 +163,11 @@ export default function MapNavigationScreen() {
           latitude: userLocation.coords.latitude,
           longitude: userLocation.coords.longitude,
         },
-        zoom: 16, // Nice street-level zoom
+        zoom: 16, 
         pitch: 0,
         heading: userLocation.coords.heading || 0,
       },
-      { duration: 800 } // 800ms smooth panning animation
+      { duration: 800 } 
     );
   };
 
@@ -206,7 +204,6 @@ export default function MapNavigationScreen() {
     <View style={styles.container}>
       <StatusBar style="dark" />
 
-      {/* Map */}
       {loading ? (
         <View style={[styles.loadingContainer, { backgroundColor: colors.surfaceVariant }]}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -216,30 +213,19 @@ export default function MapNavigationScreen() {
         </View>
       ) : (
         <View style={styles.mapContainer}>
-          {/* 3. Replaced SiteMapWidget with live react-native-maps MapView */}
-          <MapView
+          {/* 3. Enable interactive Native Map and pass the ref */}
+          <SiteMapWidget
             ref={mapRef}
-            style={StyleSheet.absoluteFillObject}
+            interactive={true}
             showsUserLocation={true}
-            showsMyLocationButton={false} // We use our custom recenter button
-            initialRegion={{
-              latitude: site.location.lat,
-              longitude: site.location.lng,
-              latitudeDelta: 0.04,
-              longitudeDelta: 0.04,
-            }}
-          >
-            {/* Draw a pin on the destination site */}
-            <Marker
-              coordinate={{
-                latitude: site.location.lat,
-                longitude: site.location.lng,
-              }}
-              title={site.name}
-              description={site.capacity}
-              pinColor={colors.primary}
-            />
-          </MapView>
+            forceNative={true}
+            location={site.location}
+            siteName={site.name}
+            subtitle={`${site.capacity} • ${distance ? formatDistance(distance) : '--'}`}
+            radiusMeters={500}
+            height={SCREEN_HEIGHT}
+            showCoordinates
+          />
         </View>
       )}
 
@@ -290,7 +276,6 @@ export default function MapNavigationScreen() {
       >
         <View style={styles.sheetHandle} />
 
-        {/* Trip Stats */}
         <View style={styles.tripStats}>
           <View style={styles.statItem}>
             <MaterialCommunityIcons name="map-marker-distance" size={32} color={colors.primary} />
@@ -309,7 +294,6 @@ export default function MapNavigationScreen() {
           </View>
         </View>
 
-        {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.secondaryButton, { backgroundColor: colors.secondaryContainer }]}
@@ -336,7 +320,6 @@ export default function MapNavigationScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Additional Info */}
         <View style={styles.infoSection}>
           <View style={styles.infoRow}>
             <MaterialCommunityIcons name="information" size={16} color={colors.onSurfaceVariant} />
@@ -347,7 +330,6 @@ export default function MapNavigationScreen() {
         </View>
       </Animated.View>
 
-      {/* Floating Recenter Button (Alternative position) */}
       <View style={styles.floatingButtons}>
         <TouchableOpacity
           style={[styles.floatingButton, { backgroundColor: colors.surface }]}
@@ -370,189 +352,34 @@ export default function MapNavigationScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  mapContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-  },
-  errorText: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  button: {
-    marginTop: 16,
-    borderRadius: 9999,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-  },
-  buttonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  topHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 12,
-  },
-  headerButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  headerInfo: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  bottomSheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#00000020',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  tripStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginTop: 8,
-  },
-  statLabel: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 60,
-    marginHorizontal: 12,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  secondaryButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  primaryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  infoSection: {
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#00000010',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  infoText: {
-    fontSize: 12,
-  },
-  floatingButtons: {
-    position: 'absolute',
-    right: 16,
-    bottom: 340,
-    gap: 12,
-  },
-  floatingButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 5,
-  },
+  container: { flex: 1 },
+  mapContainer: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 16, fontSize: 14 },
+  errorText: { fontSize: 16, textAlign: 'center' },
+  button: { marginTop: 16, borderRadius: 9999, paddingHorizontal: 24, paddingVertical: 12 },
+  buttonText: { fontSize: 14, fontWeight: '500' },
+  topHeader: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  headerContent: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, gap: 12 },
+  headerButton: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 },
+  headerInfo: { flex: 1, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 },
+  headerTitle: { fontSize: 16, fontWeight: '600' },
+  headerSubtitle: { fontSize: 12, marginTop: 2 },
+  bottomSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 8 },
+  sheetHandle: { width: 40, height: 4, backgroundColor: '#00000020', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  tripStats: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginBottom: 24 },
+  statItem: { flex: 1, alignItems: 'center' },
+  statValue: { fontSize: 24, fontWeight: '700', marginTop: 8 },
+  statLabel: { fontSize: 12, marginTop: 4 },
+  statDivider: { width: 1, height: 60, marginHorizontal: 12 },
+  actionButtons: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  secondaryButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, gap: 8 },
+  secondaryButtonText: { fontSize: 14, fontWeight: '600' },
+  primaryButton: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, gap: 8 },
+  primaryButtonText: { fontSize: 14, fontWeight: '600' },
+  infoSection: { paddingTop: 12, borderTopWidth: 1, borderTopColor: '#00000010' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  infoText: { fontSize: 12 },
+  floatingButtons: { position: 'absolute', right: 16, bottom: 340, gap: 12 },
+  floatingButton: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 5 },
 });
