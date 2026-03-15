@@ -1,11 +1,10 @@
+// store/index.ts
 import { configureStore } from '@reduxjs/toolkit';
-
-// Only put ephemeral UI state here (e.g., auth, settings)
-// All persistent data has been migrated to WatermelonDB
+import authReducer from './slices/authSlice';
 
 export const store = configureStore({
   reducer: {
-    // No reducers needed as everything uses WatermelonDB
+    auth: authReducer,
   },
 });
 

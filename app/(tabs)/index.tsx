@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
+
 import StyledText from '../components/StyledText';
 import ActivityCard from '../components/ActivityCard';
 import M3ConfirmDialog from '../components/M3ConfirmDialog';
@@ -21,6 +23,7 @@ import { useSites } from '../../lib/hooks/useSites';
 import { useDBActivities, useDBRecentActivities } from '../../lib/hooks/useDBActivities';
 import { useScheduleManagement } from '../../lib/hooks/useScheduleManagement';
 import { useActivityContextMap } from '../../lib/hooks/useActivityContext';
+import { RootState } from '../../store';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -29,6 +32,9 @@ export default function Dashboard() {
   const animatedColors = useAnimatedMaterialYouColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  // Auth State
+  const user = useSelector((state: RootState) => state.auth.currentUser);
 
   const { activities: recentActivities } = useDBRecentActivities(3);
   const { activities: allActivities, inspectionCount } = useDBActivities();
@@ -77,10 +83,22 @@ export default function Dashboard() {
       <RNAnimated.View style={[styles.header, { paddingTop: insets.top + M3Spacing.lg, backgroundColor: animatedColors.background }]}>
         <View>
           <StyledText style={{ ...M3Typography.headline.large, color: colors.onBackground, fontWeight: '600' }}>SolYield</StyledText>
-          <StyledText style={{ ...M3Typography.body.medium, color: colors.onSurfaceVariant, marginTop: 4 }}>Welcome back, Arjun</StyledText>
+          <StyledText style={{ ...M3Typography.body.medium, color: colors.onSurfaceVariant, marginTop: 4 }}>
+            Welcome back, {user?.name || 'Technician'}
+          </StyledText>
         </View>
-        <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.secondaryContainer }]} activeOpacity={0.7}>
-          <MaterialCommunityIcons name="account-circle-outline" size={24} color={colors.onSecondaryContainer} />
+        <TouchableOpacity 
+          style={[styles.iconButton, { backgroundColor: colors.secondaryContainer }]} 
+          activeOpacity={0.7}
+          onPress={() => router.push('/profile' as any)}
+        >
+          {user ? (
+            <StyledText style={{ fontSize: 18, fontWeight: 'bold', color: colors.onSecondaryContainer }}>
+              {user.name.charAt(0)}
+            </StyledText>
+          ) : (
+            <MaterialCommunityIcons name="account-circle-outline" size={24} color={colors.onSecondaryContainer} />
+          )}
         </TouchableOpacity>
       </RNAnimated.View>
 

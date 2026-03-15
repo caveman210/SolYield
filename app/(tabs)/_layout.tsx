@@ -1,3 +1,4 @@
+import React, { useCallback } from 'react';
 import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMaterialYouColors } from '../../lib/hooks/MaterialYouProvider';
@@ -6,9 +7,12 @@ import TabBar from '../components/TabBar';
 export default function TabLayout() {
   const colors = useMaterialYouColors();
 
+  // Memoize the custom tab bar to prevent unnecessary re-renders
+  const renderTabBar = useCallback((props: any) => <TabBar {...props} />, []);
+
   return (
     <Tabs
-      tabBar={(props) => <TabBar {...props} />}
+      tabBar={renderTabBar}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,

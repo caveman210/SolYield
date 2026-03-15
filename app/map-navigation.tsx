@@ -15,25 +15,22 @@ import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import MapView, { Marker } from 'react-native-maps'; // <-- ADDED NATIVE MAPS IMPORT
 
 import { SITES } from '../lib/data/sites';
-import SiteMapWidget from './components/maps/SiteMapWidget';
 import { calculateDistance, formatDistance } from '../lib/utils/location';
 import { useMaterialYouColors } from '../lib/hooks/MaterialYouProvider';
-import { M3Typography } from '../lib/design/tokens';
 import M3ErrorDialog from './components/M3ErrorDialog';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-interface RouteCoordinate {
-  latitude: number;
-  longitude: number;
-}
 
 export default function MapNavigationScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const colors = useMaterialYouColors();
+
+  // 1. Create a reference to the native map component
+  const mapRef = useRef<MapView>(null);
 
   const siteId = params.siteId as string;
   const site = SITES.find((s) => s.id === siteId);
@@ -48,13 +45,11 @@ export default function MapNavigationScreen() {
     message: string;
     type?: 'success' | 'error' | 'info';
     onConfirm?: () => void;
-    showMapOptions?: boolean;
   }>({
     visible: false,
     title: '',
     message: '',
     type: 'info',
-    showMapOptions: false,
   });
 
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -136,7 +131,6 @@ export default function MapNavigationScreen() {
   };
 
   const calculateETA = (distanceMeters: number) => {
-    // Assume average speed of 40 km/h
     const speedKmh = 40;
     const distanceKm = distanceMeters / 1000;
     const timeHours = distanceKm / speedKmh;
@@ -153,20 +147,35 @@ export default function MapNavigationScreen() {
     }
   };
 
+  // 2. Actually command the map camera to fly to the user's location
   const handleRecenterMap = () => {
-    // Map recenter functionality removed - placeholder for future native map integration
-    setDialogConfig({
-      visible: true,
-      title: 'Info',
-      message: 'Map recentering will be available when native maps are enabled',
-      type: 'info',
-    });
+    if (!userLocation) {
+      setDialogConfig({
+        visible: true,
+        title: 'Location Unavailable',
+        message: 'We are still trying to determine your current location.',
+        type: 'info',
+      });
+      return;
+    }
+
+    mapRef.current?.animateCamera(
+      {
+        center: {
+          latitude: userLocation.coords.latitude,
+          longitude: userLocation.coords.longitude,
+        },
+        zoom: 16, // Nice street-level zoom
+        pitch: 0,
+        heading: userLocation.coords.heading || 0,
+      },
+      { duration: 800 } // 800ms smooth panning animation
+    );
   };
 
   const handleOpenExternalNav = () => {
     if (!site) return;
 
-    // Open directly in the default maps app for the platform
     const label = encodeURIComponent(site.name);
     const url =
       Platform.OS === 'ios'
@@ -174,7 +183,6 @@ export default function MapNavigationScreen() {
         : `geo:0,0?q=${site.location.lat},${site.location.lng}(${label})`;
 
     Linking.openURL(url).catch(() => {
-      // Fallback to Google Maps web
       const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${site.location.lat},${site.location.lng}`;
       Linking.openURL(webUrl);
     });
@@ -208,14 +216,30 @@ export default function MapNavigationScreen() {
         </View>
       ) : (
         <View style={styles.mapContainer}>
-          <SiteMapWidget
-            location={site.location}
-            siteName={site.name}
-            subtitle={`${site.capacity} • ${distance ? formatDistance(distance) : '--'}`}
-            radiusMeters={500}
-            height={SCREEN_HEIGHT}
-            showCoordinates
-          />
+          {/* 3. Replaced SiteMapWidget with live react-native-maps MapView */}
+          <MapView
+            ref={mapRef}
+            style={StyleSheet.absoluteFillObject}
+            showsUserLocation={true}
+            showsMyLocationButton={false} // We use our custom recenter button
+            initialRegion={{
+              latitude: site.location.lat,
+              longitude: site.location.lng,
+              latitudeDelta: 0.04,
+              longitudeDelta: 0.04,
+            }}
+          >
+            {/* Draw a pin on the destination site */}
+            <Marker
+              coordinate={{
+                latitude: site.location.lat,
+                longitude: site.location.lng,
+              }}
+              title={site.name}
+              description={site.capacity}
+              pinColor={colors.primary}
+            />
+          </MapView>
         </View>
       )}
 
@@ -333,7 +357,6 @@ export default function MapNavigationScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Error/Info Dialog */}
       <M3ErrorDialog
         visible={dialogConfig.visible}
         title={dialogConfig.title}
