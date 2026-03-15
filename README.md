@@ -75,8 +75,8 @@ The application follows strict modular architecture principles:
                   │ uses
 ┌─────────────────▼───────────────────────┐
 │ Data Layer (State)                     │
-│ - WatermelonDB                         │
-│ - Models (Site, Schedule, Activity)    │
+│ - WatermelonDB                           │
+│ - Models (Site, Schedule, Activity)      │
 └─────────────────────────────────────────┘
 
 ```
@@ -409,7 +409,7 @@ The app includes reusable components following Material 3 guidelines:
 ## Project Structure
 
 ```
-
+```
 SolYield/
 ├── app/ # Expo Router pages
 │ ├── (tabs)/ # Bottom tab navigation
@@ -473,6 +473,7 @@ SolYield/
 ├── form_schema.ts # Inspection form definition
 └── package.json # Dependencies
 
+```
 ```
 ├── form_schema.js # Dynamic form schema
 ├── schedule.js # Sample schedule data
